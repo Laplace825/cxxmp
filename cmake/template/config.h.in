@@ -1,0 +1,22 @@
+#pragma once
+
+#include <string_view>
+
+namespace cxxmp {
+
+namespace versions {
+
+constexpr std::string_view BUILD_TYPE      = "@CMAKE_BUILD_TYPE@";
+constexpr std::string_view PROGRAM_NAME    = "@PROJECT_NAME@";
+constexpr std::string_view PROGRAM_VERSION = "@PROJECT_VERSION@";
+constexpr std::string_view GIT_HEAD        = "@PACKAGE_GIT_HEAD@";
+constexpr std::string_view GIT_BRANCH      = "@PACKAGE_GIT_BRANCH@";
+inline constexpr std::string_view VERSION_INFO_STRING
+  = "Project: @PROJECT_NAME@ v@PROJECT_VERSION@\n"
+    "Build: @CMAKE_BUILD_TYPE@\n"
+    "System: @CMAKE_SYSTEM@\n"
+    "Compiler: @CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@\n"
+    "Git: @PACKAGE_GIT_HEAD@ (@PACKAGE_GIT_BRANCH@)\n";
+}
+
+}

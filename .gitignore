@@ -1,0 +1,10 @@
+.cache/**
+__cmake_systeminformation/**
+bin/
+build/
+
+**/*.log
+.vscode/**
+
+**/*.a
+lib/
