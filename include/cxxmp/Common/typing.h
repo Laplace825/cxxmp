@@ -40,15 +40,19 @@ using Option = ::std::optional< T >;
 
 constexpr auto None = ::std::nullopt;
 
+// unique_ptr
 template < typename T >
 using Box = ::std::unique_ptr< T >;
 
+// Ref Count (shared_ptr)
 template < typename T >
 using Rc = ::std::shared_ptr< T >;
 
+// Ref Count (weak_ptr)
 template < typename T >
 using Weak = ::std::weak_ptr< T >;
 
+// Atomic Ref Count (atomic_shared_ptr)
 template < typename T >
 using Arc = ::std::atomic< ::std::shared_ptr< T > >;
 

@@ -14,6 +14,7 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
 
 namespace cxxmp {
 
@@ -30,6 +31,21 @@ class Task {
         Executing,
         Completed,
     };
+
+    static constexpr std::string_view state2String(State state) {
+#define Fn(stateName)      \
+    case State::stateName: \
+        return "Task::State::" #stateName;
+
+        switch (state) {
+            Fn(Created);
+            Fn(Executing);
+            Fn(Completed);
+            default:
+                return "Unknown";
+        }
+#undef Fn
+    }
 
     using Fn = std::function< void() >;
 

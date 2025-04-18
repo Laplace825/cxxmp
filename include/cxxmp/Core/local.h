@@ -45,23 +45,22 @@ class LocalTaskQueue {
         Shutdown,
     };
 
-    const std::string_view state2String(State state) {
+    static constexpr std::string_view state2String(State state) {
+#define Fn(stateName)      \
+    case State::stateName: \
+        return "LocalTaskQueue::State::" #stateName;
+
         switch (state) {
-            case State::Idle:
-                return "Idle";
-            case State::Busy:
-                return "Busy";
-            case State::Paused:
-                return "Paused";
-            case State::SubTaskErrorHappend:
-                return "SubTaskErrorHappend";
-            case State::ToCompleteAll:
-                return "ToCompleteAll";
-            case State::Shutdown:
-                return "Shutdown";
+            Fn(Idle);
+            Fn(Busy);
+            Fn(Paused);
+            Fn(SubTaskErrorHappend);
+            Fn(ToCompleteAll);
+            Fn(Shutdown);
             default:
                 return "Unknown";
         }
+#undef Fn
     }
 
   private:
@@ -248,7 +247,7 @@ class LocalTaskQueue {
     ::std::deque< RcTaskPtr > m_queue;
     mutable ::std::mutex m_mx;
     ::std::condition_variable m_cv;
-    ::std::atomic< State > m_state = State::Idle;
+    mutable ::std::atomic< State > m_state = State::Idle;
     ::std::exception_ptr m_exception_ptr;
     ::std::jthread m_worker;
 };

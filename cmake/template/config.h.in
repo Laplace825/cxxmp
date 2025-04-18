@@ -11,12 +11,13 @@ constexpr std::string_view PROGRAM_NAME    = "@PROJECT_NAME@";
 constexpr std::string_view PROGRAM_VERSION = "@PROJECT_VERSION@";
 constexpr std::string_view GIT_HEAD        = "@PACKAGE_GIT_HEAD@";
 constexpr std::string_view GIT_BRANCH      = "@PACKAGE_GIT_BRANCH@";
-inline constexpr std::string_view VERSION_INFO_STRING
-  = "Project: @PROJECT_NAME@ v@PROJECT_VERSION@\n"
-    "Build: @CMAKE_BUILD_TYPE@\n"
-    "System: @CMAKE_SYSTEM@\n"
-    "Compiler: @CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@\n"
-    "Git: @PACKAGE_GIT_HEAD@ (@PACKAGE_GIT_BRANCH@)\n";
-}
+inline constexpr std::string_view VERSION_INFO_STRING =
+  R"(Project: @PROJECT_NAME@ v@PROJECT_VERSION@
+Build: @CMAKE_BUILD_TYPE@
+System: @CMAKE_SYSTEM@
+Compiler: @CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@
+Git: @PACKAGE_GIT_HEAD@ (@PACKAGE_GIT_BRANCH@)
+)";
+} // namespace versions
 
-}
+} // namespace cxxmp

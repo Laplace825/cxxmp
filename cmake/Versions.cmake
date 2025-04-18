@@ -14,4 +14,7 @@ if(GIT_FOUND)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         RESULT_VARIABLE GIT_RESULT
     )
+    log_info("Build Type: ${CMAKE_BUILD_TYPE}")
+    log_info("Git Head: ${PACKAGE_GIT_HEAD}")
+    log_info("Git Branch: ${PACKAGE_GIT_BRANCH}")
 endif()

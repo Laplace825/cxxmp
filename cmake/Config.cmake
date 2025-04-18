@@ -1,13 +1,14 @@
 if (APPLE)
   execute_process(COMMAND xcrun --show-sdk-path
-    OUTPUT_VARIABLE MACOS_SDK_PATH 
+    OUTPUT_VARIABLE MACOS_SDK_PATH
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
-
-  set(CMAKE_CXX_FLAGS 
+  set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -stdlib=libc++ -isysroot ${MACOS_SDK_PATH}")
 elseif(LINUX)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+elseif(WINDOWS)
+  log_warn("We did not test Windows, this may have some issues")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -16,6 +17,6 @@ endif()
 
 set(CMAKE_HEADER_TEMPLATE "${CXXMP_PROJECT_ROOT_DIR}/cmake/template/")
 
-configure_file("${CMAKE_HEADER_TEMPLATE}/config.h.in" 
+configure_file("${CMAKE_HEADER_TEMPLATE}/config.h.in"
     "${CXXMP_PROJECT_ROOT_DIR}/include/config.h")
 log_info("Generate config.h file >> include/config.h")
