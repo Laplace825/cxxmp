@@ -5,7 +5,7 @@
 #include <exception>
 #include <memory>
 
-using namespace cxxmp;
+namespace cxxmp::core {
 
 // move
 Task::Task(Task&& other) noexcept
@@ -42,3 +42,5 @@ void Task::execute() {
         }
     }
 }
+
+} // namespace cxxmp::core

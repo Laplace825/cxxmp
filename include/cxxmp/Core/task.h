@@ -16,7 +16,7 @@
 #include <memory>
 #include <string_view>
 
-namespace cxxmp {
+namespace cxxmp::core {
 
 /**
  * @brief: The Task class is a placeholder for the task system.

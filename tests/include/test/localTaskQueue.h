@@ -7,17 +7,18 @@
 
 #include <algorithm>
 #include <random>
+#include <thread>
 #include <vector>
 
 namespace test::ltq {
 
 using namespace cxxmp;
+using namespace cxxmp::core;
 
 static void mutipleTask(bool mtxOrNot = false) {
     int ret = 0;
     // Shared counter without synchronization
     int shared_counter = 0;
-
     // Vector to record intermediate values - will show evidence of race
     // condition
     std::vector< int > recorded_values;
@@ -126,7 +127,8 @@ static void mutipleTask(bool mtxOrNot = false) {
     }
 }
 
-static void rightPause() {
+static bool rightPause() {
+    bool success = false;
     using namespace std::chrono_literals;
     log::info("Starting pause functionality test");
 
@@ -212,9 +214,11 @@ static void rightPause() {
     int counter_check = counter.load();
 
     if (counter_check == counter_after_pause) {
+        bool success = true;
         log::info("Queue is correctly paused - counter didn't change");
     }
     else {
+        bool success = false;
         log::error("Queue might not be paused! Counter changed from {} to {}",
           counter_after_pause, counter_check);
     }
@@ -241,6 +245,7 @@ static void rightPause() {
     }
 
     log::info("Pause functionality test completed");
+    return success;
 }
 
 namespace chr = std::chrono;
@@ -574,6 +579,32 @@ SOME TESTS FAILED!
 
         );
     }
+}
+
+static void move_construct() {
+    using namespace std::chrono_literals;
+    // testing the move constructor works
+    auto ltq = LocalTaskQueue();
+    ltq.run();
+    for (size_t i = 0; i < 10; ++i) {
+        ltq.submit(Task::build([i] {
+            log::info("Task {} start", i);
+            // some work
+            std::this_thread::sleep_for(50ms);
+            log::info("Task {} done", i);
+        }));
+    }
+
+    std::this_thread::sleep_for(250ms);
+
+    ltq.pause();
+
+    auto moved_ltq = std::move(ltq);
+    moved_ltq.unpause();
+
+    std::this_thread::sleep_for(250ms);
+    // moved_ltq.waitForCompletion();
+    // moved_ltq.shutdown();
 }
 
 } // namespace test::ltq

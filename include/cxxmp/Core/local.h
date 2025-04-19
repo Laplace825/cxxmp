@@ -26,7 +26,7 @@
 #include <thread>
 #include <type_traits>
 
-namespace cxxmp {
+namespace cxxmp::core {
 
 /**
  * @brief: the queue is a thread-local queue that is used to manage the
@@ -72,6 +72,7 @@ class LocalTaskQueue {
     void waitForTask();
 
   public:
+    // always be the 32 * cpus (system logical CPU cores)
     static constexpr size_t getCapacity() { return 32 * sys::getSysCPUs(); }
 
     LocalTaskQueue(const LocalTaskQueue&)            = delete;
@@ -252,4 +253,4 @@ class LocalTaskQueue {
     ::std::jthread m_worker;
 };
 
-} // namespace cxxmp
+} // namespace cxxmp::core

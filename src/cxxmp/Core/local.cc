@@ -8,7 +8,7 @@
 #include <mutex>
 #include <thread>
 
-namespace cxxmp {
+namespace cxxmp::core {
 
 #define LOCK_GUARD std::lock_guard< std::mutex > lock(this->m_mx)
 
