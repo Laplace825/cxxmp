@@ -1,10 +1,10 @@
 #pragma once
 
-#include "cxxmp/Common/typing.h"
+#include "config.h"
 
 namespace cxxmp::sys {
 
 // get the system logical cpus, equivalent to the hardware_concurrency
-typing::u32 getSysCPUs() noexcept;
+consteval size_t getSysCPUs() noexcept { return CXXMP_PROC_COUNT; }
 
 } // namespace cxxmp::sys

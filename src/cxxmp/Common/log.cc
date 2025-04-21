@@ -6,7 +6,7 @@
 namespace cxxmp::log {
 
 void cfg(typing::Option< level > level) noexcept {
-    set_pattern("[P %P] [T %t] [%Y %T] [%^%l%$] %v");
+    set_pattern("[%^%l%$] [P %P] [T %t] [%Y %T] %v");
     auto SPDLOG_LEVEL = level::debug;
     if (level == ::std::nullopt) {
         if (::cxxmp::versions::BUILD_TYPE == "Release") {
@@ -17,6 +17,7 @@ void cfg(typing::Option< level > level) noexcept {
     else {
         ::spdlog::set_level(level.value());
     }
+    ::spdlog::cfg::load_env_levels();
 }
 
 } // namespace cxxmp::log

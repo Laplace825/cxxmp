@@ -9,7 +9,7 @@ clean:
 	@rm -rf ./build ./bin/* ./lib/*
 
 test: build
-	@./bin/cxxmp-Test
+	@SPDLOG_LEVLE=trace ./bin/cxxmp-Test
 
 
 .PHONY: build clean

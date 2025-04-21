@@ -12,48 +12,44 @@
 
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/typing.h"
-#include "cxxmp/Core/local.h"
-#include "cxxmp/Utily/getsys.h"
-
-#include <ranges>
+#include "cxxmp/Core/taskQueue.h"
 
 namespace cxxmp {
 
 class Scheduler {
-  private:
-    static size_t objCnt;
-
   public:
     // Constructor
     [[nodiscard("Should not be called directly. If you want to create a "
                 "scheduler, use the build() method.")]]
-    Scheduler(size_t = sys::getSysCPUs());
+    Scheduler();
 
     Scheduler(const Scheduler&)            = delete;
     Scheduler& operator=(const Scheduler&) = delete;
 
     Scheduler(Scheduler&& other) noexcept
         : m_numCPUs(other.m_numCPUs),
-          m_localQueues(std::move(other.m_localQueues)) {
-        other.m_numCPUs = 0;
-    }
+          m_localQueuesMap(std::move(other.m_localQueuesMap)),
+          m_globalQueue(std::move(other.m_globalQueue)) {}
 
     ~Scheduler() {
-        for (auto& queue : m_localQueues) {
+        for (auto& queue : m_localQueuesMap) {
             queue->shutdown();
         }
     };
 
     static typing::Box< Scheduler > build() {
-        return std::make_unique< Scheduler >(sys::getSysCPUs());
+        return std::make_unique< Scheduler >();
     }
 
-    size_t numCPUs() const { return m_numCPUs; }
+    consteval size_t numCPUs() const { return m_numCPUs; }
 
   private:
-    size_t m_numCPUs;
-    ::std::vector< typing::Box< core::LocalTaskQueue > >
-      m_localQueues; // capacity equals to m_numCPUs
+    static size_t objCnt;
+    const size_t m_numCPUs{sys::CXXMP_PROC_COUNT};
+    mutable ::std::array< typing::Box< core::LocalTaskQueue >,
+      sys::CXXMP_PROC_COUNT >
+      m_localQueuesMap; // capacity equals to m_numCPUs
+    mutable typing::Box< core::GlobalTaskQueue > m_globalQueue;
 
     /**
      * @brief: we allocate a task to the local queue like a clock allocator

@@ -1,4 +1,4 @@
-#include "cxxmp/Core/local.h"
+#include "cxxmp/Core/taskQueue.h"
 
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/typing.h"
@@ -267,4 +267,4 @@ void LocalTaskQueue::run() {
     this->m_hid = std::hash< std::thread::id >{}(this->m_tid);
     log::debug("LocalTaskQueue[{}] Run", this->getHid());
 }
-} // namespace cxxmp
+} // namespace cxxmp::core

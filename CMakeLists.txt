@@ -21,6 +21,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Git.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Versions.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/third-party/addSpdlog.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/GetSysInfo.cmake")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/src")

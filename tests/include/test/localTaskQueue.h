@@ -2,8 +2,8 @@
 
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/typing.h"
-#include "cxxmp/Core/local.h"
 #include "cxxmp/Core/task.h"
+#include "cxxmp/Core/taskQueue.h"
 
 #include <algorithm>
 #include <random>
@@ -500,7 +500,7 @@ static bool run_performance_test(
     log::fmt_lib::println("Result Valid: {}\n", all_valid);
 
     // Run parallel test with half the available cores
-    int half_cores = std::max(1u, sys::getSysCPUs() / 2);
+    int half_cores = std::max(1ul, sys::getSysCPUs() / 2);
     PerformanceMetrics par_half_metrics =
       run_parallel_test(type, num_tasks, complexity, half_cores);
     par_half_metrics.speedup =

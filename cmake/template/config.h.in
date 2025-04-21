@@ -4,6 +4,12 @@
 
 namespace cxxmp {
 
+namespace sys {
+
+constexpr size_t CXXMP_PROC_COUNT = @CXXMP_PROC_COUNT@;
+
+}
+
 namespace versions {
 
 constexpr std::string_view BUILD_TYPE      = "@CMAKE_BUILD_TYPE@";

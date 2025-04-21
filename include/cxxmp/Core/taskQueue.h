@@ -1,17 +1,5 @@
 #pragma once
 
-/**
- * cxxmp: C++ Multi-Processing (GMP inspired)
- *
- * The local task queue is a thread-local queue that is used to manage the
- * local tasks for a thread.
- *
- * We create threads equals to the number of the logical cores
- * Each thread has its own task queue
- * but the task queue could be shared with other threads, for any other could
- * steal tasks from others local queue
- */
-
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/typing.h"
 #include "cxxmp/Core/task.h"
@@ -26,7 +14,43 @@
 #include <thread>
 #include <type_traits>
 
+/**
+ * cxxmp: C++ Multi-Processing (GMP inspired)
+ *
+ * The local task queue is a thread-local queue that is used to manage the
+ * local tasks for a thread.
+ *
+ * We create threads equals to the number of the logical cores
+ * Each thread has its own task queue
+ * but the task queue could be shared with other threads, for any other could
+ * steal tasks from others local queue
+ */
+
 namespace cxxmp::core {
+
+class TaskQueue {
+  protected:
+    ::std::deque< RcTaskPtr > m_queue;
+    mutable ::std::mutex m_mx;
+    size_t m_capacity;
+
+  public:
+    TaskQueue(const TaskQueue&)            = delete;
+    TaskQueue& operator=(const TaskQueue&) = delete;
+    TaskQueue()                            = default;
+
+    TaskQueue(TaskQueue&& other)
+        : m_queue(std::move(other.m_queue)), m_capacity(other.m_capacity) {
+        other.m_queue.clear();
+    }
+
+    TaskQueue(size_t capacity) : m_capacity(capacity) { m_queue.clear(); }
+
+    ~TaskQueue() {
+        log::debug("TaskQueue destroyed");
+        m_queue.clear();
+    }
+};
 
 /**
  * @brief: the queue is a thread-local queue that is used to manage the
@@ -34,7 +58,7 @@ namespace cxxmp::core {
  *
  * This is a state machine
  */
-class LocalTaskQueue {
+class LocalTaskQueue : public TaskQueue {
   public:
     enum class State {
         Idle, // the start state
@@ -79,9 +103,8 @@ class LocalTaskQueue {
     LocalTaskQueue& operator=(const LocalTaskQueue&) = delete;
 
     LocalTaskQueue(LocalTaskQueue&& other) noexcept
-        : m_capacity(other.m_capacity), m_hid(other.m_hid), m_tid(other.m_tid),
-          m_queue(std::move(other.m_queue)), m_state(other.m_state.load()),
-          m_exception_ptr(other.m_exception_ptr) {
+        : m_hid(other.m_hid), m_tid(other.m_tid), m_state(other.m_state.load()),
+          m_exception_ptr(other.m_exception_ptr), TaskQueue(std::move(other)) {
         other.m_state = State::Idle;
         if (other.m_worker.joinable()) {
             other.shutdown();
@@ -116,7 +139,7 @@ class LocalTaskQueue {
         return *this;
     }
 
-    explicit LocalTaskQueue(size_t capacity) {
+    explicit LocalTaskQueue(size_t capacity) : TaskQueue(capacity) {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
         m_state         = State::Idle;
@@ -124,12 +147,11 @@ class LocalTaskQueue {
         m_capacity      = capacity;
     }
 
-    LocalTaskQueue() {
+    LocalTaskQueue() : TaskQueue(getCapacity()) {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
         m_state         = State::Idle;
         m_exception_ptr = nullptr;
-        m_capacity      = getCapacity();
     }
 
     ~LocalTaskQueue() {
@@ -242,15 +264,48 @@ class LocalTaskQueue {
     void clear();
 
   private:
-    size_t m_capacity;
     size_t m_hid;            // a hashed thread id
     ::std::thread::id m_tid; // the thread id
-    ::std::deque< RcTaskPtr > m_queue;
-    mutable ::std::mutex m_mx;
     ::std::condition_variable m_cv;
     mutable ::std::atomic< State > m_state = State::Idle;
     ::std::exception_ptr m_exception_ptr;
     ::std::jthread m_worker;
+};
+
+// Global task queue
+class GlobalTaskQueue : public TaskQueue {
+  public:
+    GlobalTaskQueue() = default;
+
+    GlobalTaskQueue(GlobalTaskQueue&& other) noexcept
+        : TaskQueue(std::move(other)) {}
+
+    // store a task to the back
+    template < typename TaskType >
+        requires std::is_same_v< TaskType, Task > ||
+                 std::is_same_v< TaskPtr, Task >
+    void store(TaskType&& task) {
+        std::lock_guard< std::mutex > lock(m_mx);
+        if constexpr (::std::is_same_v< ::std::decay_t< TaskType >, Task >) {
+            m_queue.push_back(
+              ::std::make_shared< Task >(std::forward< TaskType >(task)));
+        }
+        else if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
+                             TaskPtr >)
+        {
+            m_queue.push_back(std::move(task));
+        }
+    }
+
+    RcTaskPtr pop() {
+        std::lock_guard< std::mutex > lock(m_mx);
+        if (!m_queue.empty()) {
+            auto task = std::move(m_queue.front());
+            m_queue.pop_front();
+            return task;
+        }
+        return nullptr;
+    }
 };
 
 } // namespace cxxmp::core
