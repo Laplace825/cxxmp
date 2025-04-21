@@ -41,11 +41,11 @@ class Scheduler {
         return std::make_unique< Scheduler >();
     }
 
-    consteval size_t numCPUs() const { return m_numCPUs; }
+    constexpr size_t numCPUs() const { return m_numCPUs; }
 
   private:
     static size_t objCnt;
-    const size_t m_numCPUs{sys::CXXMP_PROC_COUNT};
+    size_t m_numCPUs{sys::CXXMP_PROC_COUNT};
     mutable ::std::array< typing::Box< core::LocalTaskQueue >,
       sys::CXXMP_PROC_COUNT >
       m_localQueuesMap; // capacity equals to m_numCPUs
