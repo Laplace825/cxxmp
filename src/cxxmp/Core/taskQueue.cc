@@ -1,7 +1,7 @@
 #include "cxxmp/Core/taskQueue.h"
 
 #include "cxxmp/Common/log.h"
-#include "cxxmp/Common/typing.h"
+#include "cxxmp/Core/queueObserver.h"
 #include "cxxmp/Core/task.h"
 
 #include <exception>
@@ -16,7 +16,7 @@ void LocalTaskQueue::stateTransfer2(State state) {
     log::trace("LocalTaskQueue[{}] from {} to {}", this->getHid(),
       state2String(this->m_state), state2String(state));
     // std::atomic
-    this->m_state = state;
+    this->m_state.store(state);
 
     // Notify one waiting thread, this may notify the thread
     // that is waiting for a task
@@ -38,57 +38,22 @@ void LocalTaskQueue::handleError() {
     if (this->m_exception_ptr) {
         try {
             throw this->m_exception_ptr;
-        } catch (...) {
-            log::error("LocalTaskQueue[{}] Get Error", this->getHid());
+        } catch (const std::exception& e) {
+            log::error(
+              "LocalTaskQueue[{}] Get Error: {}", this->getHid(), e.what());
         }
         this->m_exception_ptr = nullptr;
     }
 }
 
-typing::Rc< Task > LocalTaskQueue::getFrontDirect() {
+RcTaskPtr LocalTaskQueue::popBack() {
     LOCK_GUARD;
-    if (this->m_queue.empty()) {
-        log::debug(
-          "LocalTaskQueue[{}] frontDirect(): Queue is empty", this->getHid());
-        return nullptr;
-    }
-
-    auto task = this->m_queue.front();
-    // Debug the shared_ptr before conversion
-    log::debug("LocalTaskQueue[{}] frontDirect(): Got task with use_count = {}",
-      this->getHid(), task.use_count());
-    return task;
+    return this->pop(false);
 }
 
-typing::Rc< Task > LocalTaskQueue::getBackDirect() {
+RcTaskPtr LocalTaskQueue::popFront() {
     LOCK_GUARD;
-    if (this->m_queue.empty()) {
-        log::debug(
-          "LocalTaskQueue[{}] frontDirect(): Queue is empty", this->getHid());
-        return nullptr;
-    }
-
-    auto task = this->m_queue.back();
-    // Debug the shared_ptr before conversion
-    log::debug("LocalTaskQueue[{}] frontDirect(): Got task with use_count = {}",
-      this->getHid(), task.use_count());
-    return task;
-}
-
-void LocalTaskQueue::popBack() {
-    if (this->m_queue.empty()) {
-        return;
-    }
-    LOCK_GUARD;
-    this->m_queue.pop_back();
-}
-
-void LocalTaskQueue::popFront() {
-    if (this->m_queue.empty()) {
-        return;
-    }
-    LOCK_GUARD;
-    this->m_queue.pop_front();
+    return this->pop(true);
 }
 
 bool LocalTaskQueue::hasTask() const noexcept { return !this->m_queue.empty(); }
@@ -136,6 +101,9 @@ void LocalTaskQueue::shutdown() {
 }
 
 void LocalTaskQueue::waitForCompletion() {
+    if (m_state == State::Shutdown) {
+        return;
+    }
     log::debug("LocalTaskQueue[{}] WaitForCompletion", this->getHid());
     // to state busy working and doing all the jobs, when the queue is
     // empty the completion condition is met
@@ -146,21 +114,28 @@ void LocalTaskQueue::waitForCompletion() {
     log::debug("LocalTaskQueue[{}] WaitForCompletion Done", this->getHid());
 }
 
+void LocalTaskQueue::startCompletion() {
+    log::debug("LocalTaskQueue[{}] startCompletion", this->getHid());
+    this->stateTransfer2(State::ToCompleteAll);
+}
+
 // just run one front task each time
-bool LocalTaskQueue::step() {
+bool LocalTaskQueue::step(TaskQueueObserver* observer) {
     bool runned = false;
     if (hasTask()) {
         log::debug("Working LocalTaskQueue[{}] Tasks: {}", this->getHid(),
           this->m_queue.size());
-        auto task = this->getFrontDirect();
-        this->popFront();
+        auto task = this->popFront();
         if (task) {
             try {
                 task->execute();
                 runned = true;
-            } catch (const std::exception& e) {
-                // Handle the exception
-                this->m_exception_ptr = std::make_exception_ptr(e);
+                if (observer && m_state != State::Shutdown) {
+                    observer->notifyQueueHasSpace(getHid());
+                    log::trace("LocalTaskQueue[{}] notify Has Space", getHid());
+                }
+            } catch (...) {
+                this->m_exception_ptr = std::current_exception();
                 this->stateTransfer2(State::SubTaskErrorHappend);
             }
         }
@@ -170,8 +145,8 @@ bool LocalTaskQueue::step() {
     return runned;
 }
 
-void LocalTaskQueue::run() {
-    m_worker    = std::jthread([this]() {
+void LocalTaskQueue::run(TaskQueueObserver* observer) {
+    m_worker = std::jthread([this, observer]() {
         // the state machine
         while (m_state != State::Shutdown) {
             switch (m_state) {
@@ -207,23 +182,24 @@ void LocalTaskQueue::run() {
                     // Any State could be transfered to ToCompleteAll
                     // when user requested to complete all tasks
                     try {
-                        if (!step()) {
+                        if (!step(observer)) {
                             log::debug("LocalTaskQueue[{}] CompleteAll "
-                                             "finished, Transfer to Idle",
-                                 this->getHid());
+                                       "finished, Transfer to Idle",
+                              this->getHid());
                             // no task to done
                             stateTransfer2(State::Idle);
-                        };
-                    } catch (...) {
-                        log::error("LocalTaskQueue[{}] CompleteAll Error",
-                             this->getHid());
+                        }
+                    } catch (const std::exception& e) {
+                        log::error("LocalTaskQueue[{}] CompleteAll "
+                                   "Got Error: {}",
+                          this->getHid(), e.what());
                     }
                     break;
                 }
                 case State::Busy: {
                     // `Idle` -> `Busy` when get one work to do
                     try {
-                        step();
+                        step(observer);
                         // a task is done without exception
                         if (m_state == State::Busy) {
                             // when we still working but user already change
@@ -247,7 +223,7 @@ void LocalTaskQueue::run() {
                         // paused `unpause` will change the state to idle
                         m_cv.wait(lock, [this] {
                             log::trace(
-                              "Waiting for state change from Paused to Idle");
+                              "Waiting for state change from Paused to Any");
                             return m_state != State::Paused;
                         });
                     }
@@ -263,8 +239,8 @@ void LocalTaskQueue::run() {
             } // end switch
         } // end while loop
     });
-    this->m_tid = this->m_worker.get_id();
-    this->m_hid = std::hash< std::thread::id >{}(this->m_tid);
+    m_tid    = m_worker.get_id();
+    m_hid    = std::hash< std::thread::id >{}(m_tid);
     log::debug("LocalTaskQueue[{}] Run", this->getHid());
 }
 } // namespace cxxmp::core

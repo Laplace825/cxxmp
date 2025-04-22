@@ -69,8 +69,8 @@ class Task {
     State getState() const noexcept { return m_state; }
 
     template < typing::Callable CallableFn >
-    static typing::Box< Task > build(CallableFn&& fn) {
-        return std::make_unique< Task >(std::forward< Fn >(fn));
+    static typing::Rc< Task > build(CallableFn&& fn) {
+        return std::make_shared< Task >(std::forward< Fn >(fn));
     }
 
   private:

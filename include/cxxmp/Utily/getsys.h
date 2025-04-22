@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "cxxmp/config.h"
 
 namespace cxxmp::sys {
 

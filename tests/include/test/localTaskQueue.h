@@ -1,7 +1,5 @@
 #pragma once
 
-#include "cxxmp/Common/log.h"
-#include "cxxmp/Common/typing.h"
 #include "cxxmp/Core/task.h"
 #include "cxxmp/Core/taskQueue.h"
 
@@ -44,7 +42,7 @@ static void mutipleTask(bool mtxOrNot = false) {
     }
     // Submit a large number of tasks to each queue
     for (size_t q = 0; q < ltqs.size(); q++) {
-        for (size_t i = 0; i < ltqs[q].capacity(); i++) {
+        for (size_t i = 0; i < ltqs[q].getCapacity(); i++) {
             ltqs[q].submit(Task::build([&shared_counter, &recorded_values,
                                          &vec_mutex, &mtx, q, i, mtxOrNot]() {
                 if (mtxOrNot) {
@@ -123,7 +121,7 @@ static void mutipleTask(bool mtxOrNot = false) {
     }
 
     for (auto& ltq : ltqs) {
-        log::info("LocalTaskQueue size: {}", ltq.size());
+        log::info("LocalTaskQueue size: {}", ltq.getSize());
     }
 }
 
@@ -260,7 +258,7 @@ struct PerformanceMetrics {
     double efficiency;       // Speedup / number of threads
 };
 
-static bool judge_results(
+static bool judgeResults(
   const PerformanceMetrics& lhs, const PerformanceMetrics& rhs) {
     for (size_t i = 0; i < lhs.results.size(); ++i) {
         if (lhs.results[i] != rhs.results[i]) {
@@ -271,7 +269,7 @@ static bool judge_results(
 }
 
 // Function to print metrics in a nice format
-static void print_metrics(
+static void printMetrics(
   const std::string& test_name, const PerformanceMetrics& metrics) {
     log::fmt_lib::println("==== {} ====", test_name);
     log::fmt_lib::println(
@@ -293,7 +291,7 @@ enum class WorkloadType {
 };
 
 // Create a task function based on workload type and duration
-static std::function< void() > create_task_fn(
+static std::function< void() > createTaskFn(
   WorkloadType type, int complexity, int& ret) {
     switch (type) {
         case WorkloadType::CPU_BOUND: {
@@ -377,7 +375,7 @@ static std::function< void() > create_task_fn(
 }
 
 // Run tasks sequentially and measure time
-static PerformanceMetrics run_sequential_test(
+static PerformanceMetrics runSequentialTest(
   WorkloadType type, int num_tasks, int complexity) {
     std::vector< std::function< void() > > tasks;
     tasks.reserve(num_tasks);
@@ -385,7 +383,7 @@ static PerformanceMetrics run_sequential_test(
 
     // Create tasks
     for (int i = 0; i < num_tasks; ++i) {
-        tasks.push_back(create_task_fn(type, complexity, results[i]));
+        tasks.push_back(createTaskFn(type, complexity, results[i]));
     }
 
     // Execute tasks sequentially and measure time
@@ -412,7 +410,7 @@ static PerformanceMetrics run_sequential_test(
 }
 
 // Run tasks using LocalTaskQueue and measure time
-static PerformanceMetrics run_parallel_test(WorkloadType type, int num_tasks,
+static PerformanceMetrics runParallelTest(WorkloadType type, int num_tasks,
   int complexity, int num_queues = sys::getSysCPUs()) {
     // Create task queues
     std::vector< LocalTaskQueue > queues;
@@ -429,7 +427,7 @@ static PerformanceMetrics run_parallel_test(WorkloadType type, int num_tasks,
     auto start = chr::high_resolution_clock::now();
 
     for (int i = 0; i < num_tasks; ++i) {
-        auto task_fn = create_task_fn(type, complexity, results[i]);
+        auto task_fn = createTaskFn(type, complexity, results[i]);
         // Round-robin task distribution
         queues[i % num_queues].submit(Task::build(task_fn));
     }
@@ -458,7 +456,7 @@ static PerformanceMetrics run_parallel_test(WorkloadType type, int num_tasks,
 }
 
 // Run a comprehensive test comparing sequential vs parallel
-static bool run_performance_test(
+static bool runPerformanceTest(
   WorkloadType type, int num_tasks, int complexity) {
     std::string type_name;
     bool all_valid = true;
@@ -486,78 +484,78 @@ static bool run_performance_test(
 
     // Run sequential test
     PerformanceMetrics seq_metrics =
-      run_sequential_test(type, num_tasks, complexity);
-    print_metrics("Sequential Execution", seq_metrics);
+      runSequentialTest(type, num_tasks, complexity);
+    printMetrics("Sequential Execution", seq_metrics);
 
     // Run parallel test with 1 queue
     PerformanceMetrics par1_metrics =
-      run_parallel_test(type, num_tasks, complexity, 1);
+      runParallelTest(type, num_tasks, complexity, 1);
     par1_metrics.speedup =
       seq_metrics.total_time_ms / par1_metrics.total_time_ms;
     par1_metrics.efficiency = par1_metrics.speedup / 1.0;
-    print_metrics("Parallel Execution (1 queue)", par1_metrics);
-    all_valid &= judge_results(seq_metrics, par1_metrics);
+    printMetrics("Parallel Execution (1 queue)", par1_metrics);
+    all_valid &= judgeResults(seq_metrics, par1_metrics);
     log::fmt_lib::println("Result Valid: {}\n", all_valid);
 
     // Run parallel test with half the available cores
     int half_cores = std::max(1ul, sys::getSysCPUs() / 2);
     PerformanceMetrics par_half_metrics =
-      run_parallel_test(type, num_tasks, complexity, half_cores);
+      runParallelTest(type, num_tasks, complexity, half_cores);
     par_half_metrics.speedup =
       seq_metrics.total_time_ms / par_half_metrics.total_time_ms;
     par_half_metrics.efficiency = par_half_metrics.speedup / half_cores;
-    print_metrics(
+    printMetrics(
       "Parallel Execution (" + std::to_string(half_cores) + " queues)",
       par_half_metrics);
-    all_valid &= judge_results(seq_metrics, par_half_metrics);
+    all_valid &= judgeResults(seq_metrics, par_half_metrics);
     log::fmt_lib::println("Result Valid: {}\n", all_valid);
 
     // Run parallel test with all available cores
     PerformanceMetrics par_all_metrics =
-      run_parallel_test(type, num_tasks, complexity);
+      runParallelTest(type, num_tasks, complexity);
     par_all_metrics.speedup =
       seq_metrics.total_time_ms / par_all_metrics.total_time_ms;
     par_all_metrics.efficiency = par_all_metrics.speedup / sys::getSysCPUs();
-    print_metrics("Parallel Execution (all " +
-                    std::to_string(sys::getSysCPUs()) + " cores)",
+    printMetrics("Parallel Execution (all " +
+                   std::to_string(sys::getSysCPUs()) + " cores)",
       par_all_metrics);
-    all_valid &= judge_results(seq_metrics, par_all_metrics);
+    all_valid &= judgeResults(seq_metrics, par_all_metrics);
     log::fmt_lib::println("Result Valid: {}\n", all_valid);
 
     // Run parallel test with 2x available cores to test oversubscription
     int double_cores = sys::getSysCPUs() * 2;
     PerformanceMetrics par_over_metrics =
-      run_parallel_test(type, num_tasks, complexity, double_cores);
+      runParallelTest(type, num_tasks, complexity, double_cores);
     par_over_metrics.speedup =
       seq_metrics.total_time_ms / par_over_metrics.total_time_ms;
     par_over_metrics.efficiency = par_over_metrics.speedup / double_cores;
-    print_metrics("Parallel Execution (oversubscribed: " +
-                    std::to_string(double_cores) + " queues)",
+    printMetrics("Parallel Execution (oversubscribed: " +
+                   std::to_string(double_cores) + " queues)",
       par_over_metrics);
-    all_valid &= judge_results(seq_metrics, par_over_metrics);
+    all_valid &= judgeResults(seq_metrics, par_over_metrics);
     log::fmt_lib::println("Result Valid: {}\n", all_valid);
     return all_valid;
 }
 
 // Main test function
-static void run_all_performance_tests() {
+static void runAllPerformanceTests() {
     bool all_valid = true;
 
     // Test CPU-bound workloads
-    all_valid &= run_performance_test(
-      WorkloadType::CPU_BOUND, 1000, 10); // Many small tasks
-    all_valid &= run_performance_test(
+    all_valid &=
+      runPerformanceTest(WorkloadType::CPU_BOUND, 1000, 10); // Many small tasks
+    all_valid &= runPerformanceTest(
       WorkloadType::CPU_BOUND, 100, 100); // Fewer larger tasks
 
     // Test memory-bound workloads
-    all_valid &= run_performance_test(WorkloadType::MEMORY_BOUND, 100, 5);
+    all_valid &= runPerformanceTest(WorkloadType::MEMORY_BOUND, 100, 5);
 
     // Test IO-bound workloads
-    all_valid &= run_performance_test(
+    all_valid &= runPerformanceTest(
       WorkloadType::IO_BOUND, 500, 20); // 20ms simulated I/O per task
 
     // Test mixed workloads
-    all_valid &= run_performance_test(WorkloadType::MIXED, 200, 50);
+    all_valid &= runPerformanceTest(WorkloadType::MIXED, 200, 50);
 
     if (all_valid) {
         log::fmt_lib::println(
@@ -581,7 +579,7 @@ SOME TESTS FAILED!
     }
 }
 
-static void move_construct() {
+static void moveConstruct() {
     using namespace std::chrono_literals;
     // testing the move constructor works
     auto ltq = LocalTaskQueue();

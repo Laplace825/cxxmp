@@ -1,7 +1,7 @@
 #include "cxxmp/Common/log.h"
 
-#include "config.h"
 #include "cxxmp/Common/typing.h"
+#include "cxxmp/config.h"
 
 namespace cxxmp::log {
 

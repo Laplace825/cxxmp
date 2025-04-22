@@ -18,5 +18,5 @@ endif()
 set(CMAKE_HEADER_TEMPLATE "${CXXMP_PROJECT_ROOT_DIR}/cmake/template/")
 
 configure_file("${CMAKE_HEADER_TEMPLATE}/config.h.in"
-    "${CXXMP_PROJECT_ROOT_DIR}/include/config.h")
+    "${CXXMP_PROJECT_ROOT_DIR}/include/cxxmp/config.h")
 log_info("Generate config.h file >> include/config.h")

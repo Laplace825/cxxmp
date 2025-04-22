@@ -1,18 +1,18 @@
 #pragma once
 
 #include "cxxmp/Common/log.h"
-#include "cxxmp/Common/typing.h"
+#include "cxxmp/config.h"
+#include "cxxmp/Core/queueObserver.h"
 #include "cxxmp/Core/task.h"
 #include "cxxmp/Utily/getsys.h"
 
 #include <atomic>
 #include <condition_variable>
 #include <deque>
-#include <exception>
+#include <memory>
 #include <mutex>
 #include <string_view>
 #include <thread>
-#include <type_traits>
 
 /**
  * cxxmp: C++ Multi-Processing (GMP inspired)
@@ -34,6 +34,22 @@ class TaskQueue {
     mutable ::std::mutex m_mx;
     size_t m_capacity;
 
+  protected:
+    RcTaskPtr pop(bool front) {
+        if (this->m_queue.empty()) {
+            return nullptr;
+        }
+        auto task =
+          std::move(front ? this->m_queue.front() : this->m_queue.back());
+        if (front) {
+            this->m_queue.pop_front();
+        }
+        else {
+            this->m_queue.pop_back();
+        }
+        return task;
+    }
+
   public:
     TaskQueue(const TaskQueue&)            = delete;
     TaskQueue& operator=(const TaskQueue&) = delete;
@@ -50,6 +66,8 @@ class TaskQueue {
         log::debug("TaskQueue destroyed");
         m_queue.clear();
     }
+
+    bool empty() const noexcept { return m_queue.empty(); }
 };
 
 /**
@@ -97,7 +115,7 @@ class LocalTaskQueue : public TaskQueue {
 
   public:
     // always be the 32 * cpus (system logical CPU cores)
-    static constexpr size_t getCapacity() { return 32 * sys::getSysCPUs(); }
+    constexpr size_t getCapacity() const noexcept { return m_capacity; }
 
     LocalTaskQueue(const LocalTaskQueue&)            = delete;
     LocalTaskQueue& operator=(const LocalTaskQueue&) = delete;
@@ -147,7 +165,7 @@ class LocalTaskQueue : public TaskQueue {
         m_capacity      = capacity;
     }
 
-    LocalTaskQueue() : TaskQueue(getCapacity()) {
+    LocalTaskQueue() : TaskQueue(sys::CXXMP_PROC_COUNT * 32) {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
         m_state         = State::Idle;
@@ -161,41 +179,41 @@ class LocalTaskQueue : public TaskQueue {
 
     // submit a task to run, always push to the back
     template < typename TaskType >
-        requires ::std::is_same_v< TaskType, Task > ||
-                 ::std::is_same_v< TaskType, TaskPtr >
+        requires ::std::is_same_v< std::decay_t< TaskType >, Task > ||
+                 ::std::is_same_v< std::decay_t< TaskType >, RcTaskPtr >
     bool submit(TaskType&& task) {
         if (m_state == State::Shutdown) {
             return false;
         }
-        if (m_queue.size() >= m_capacity) {
-            return false;
-        }
-        if constexpr (::std::is_same_v< ::std::decay_t< TaskType >, Task >) {
-            std::lock_guard< std::mutex > lock(m_mx);
-            m_queue.push_back(
-              ::std::make_shared< Task >(std::forward< TaskType >(task)));
-        }
-        else if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
-                             TaskPtr >)
         {
-
-            // In submit method
-            log::debug("Submitting task: ptr={:p}, valid={}", (void*)task.get(),
-              task != nullptr);
             std::lock_guard< std::mutex > lock(m_mx);
-            m_queue.push_back(std::move(task));
-            log::debug("LocalTaskQueue Tasks: {}", m_queue.size());
+            if (m_queue.size() >= m_capacity) {
+                return false;
+            }
+            if constexpr (::std::is_same_v< ::std::decay_t< TaskType >, Task >)
+            {
+                return submit(
+                  std::make_shared< Task >(std::forward< Task >(task)));
+            }
+            else if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
+                                 RcTaskPtr >)
+            {
+                // In submit method
+                log::debug("Submitting task: ptr={:p}, valid={}",
+                  (void*)task.get(), task != nullptr);
+                m_queue.push_back(std::move(task));
+                log::debug("LocalTaskQueue Tasks: {}", m_queue.size());
+            }
+            m_cv.notify_one();
         }
-        m_cv.notify_one();
         // After pushing to queue
-        log::debug("Queue now has {} tasks, front valid={}", m_queue.size(),
-          m_queue.front() != nullptr);
+        log::debug("Queue now has {} tasks", m_queue.size());
         return true;
     }
 
-    constexpr size_t size() const noexcept { return m_queue.size(); }
+    constexpr size_t getSize() const noexcept { return m_queue.size(); }
 
-    constexpr size_t capacity() const noexcept { return m_capacity; }
+    constexpr bool full() const noexcept { return getSize() == getCapacity(); }
 
     // get the `thread` id
     ::std::thread::id getTid() const noexcept { return m_tid; }
@@ -238,28 +256,34 @@ class LocalTaskQueue : public TaskQueue {
      */
     void waitForCompletion();
 
+    /**
+     * @brief: start completion of all tasks in the queue
+     *
+     * This method will start completion of all tasks in the queue.
+     * Unlike `waitForCompletion`, this method will not block until all tasks
+     * have completed. It will start completion of all tasks in the queue and
+     * return immediately.
+     *
+     * After this method returns, state change to `State::Idle`.
+     */
+    void startCompletion();
+
     // pop back one task
     //
     // has a mutex lock to protect the queue
-    void popBack();
+    RcTaskPtr popBack();
 
     // pop front
     //
     // has a mutex lock to protect the queue
-    void popFront();
-
-    // // it will move the task to the back of the queue
-    // void push_back(TaskPtr task);
-
-    typing::Rc< Task > getFrontDirect();
-    typing::Rc< Task > getBackDirect();
+    RcTaskPtr popFront();
 
     // run front one task each time
     // return `false` if no task to run
-    bool step();
+    bool step(TaskQueueObserver* = nullptr);
 
     // run all task (always from the front)
-    void run();
+    void run(TaskQueueObserver* = nullptr);
 
     void clear();
 
@@ -275,37 +299,38 @@ class LocalTaskQueue : public TaskQueue {
 // Global task queue
 class GlobalTaskQueue : public TaskQueue {
   public:
-    GlobalTaskQueue() = default;
+    GlobalTaskQueue()  = default;
+    ~GlobalTaskQueue() = default;
 
     GlobalTaskQueue(GlobalTaskQueue&& other) noexcept
-        : TaskQueue(std::move(other)) {}
+        : TaskQueue(::std::move(other)) {}
 
     // store a task to the back
     template < typename TaskType >
-        requires std::is_same_v< TaskType, Task > ||
-                 std::is_same_v< TaskPtr, Task >
+        requires ::std::is_same_v< ::std::decay_t< TaskType >, Task > ||
+                 ::std::is_same_v< ::std::decay_t< TaskType >, RcTaskPtr >
     void store(TaskType&& task) {
-        std::lock_guard< std::mutex > lock(m_mx);
+        ::std::lock_guard< std::mutex > lock(m_mx);
         if constexpr (::std::is_same_v< ::std::decay_t< TaskType >, Task >) {
+            log::trace("GlobalTaskQueue Storing task");
             m_queue.push_back(
-              ::std::make_shared< Task >(std::forward< TaskType >(task)));
+              ::std::make_shared< Task >(std::forward< Task >(task)));
         }
         else if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
-                             TaskPtr >)
+                             RcTaskPtr >)
         {
+            log::trace("GlobalTaskQueue Storing Ptr task: ptr={:p}, valid={}",
+              (void*)task.get(), task != nullptr);
             m_queue.push_back(std::move(task));
         }
     }
 
-    RcTaskPtr pop() {
+    RcTaskPtr popFront() {
         std::lock_guard< std::mutex > lock(m_mx);
-        if (!m_queue.empty()) {
-            auto task = std::move(m_queue.front());
-            m_queue.pop_front();
-            return task;
-        }
-        return nullptr;
+        return pop(true);
     }
+
+    constexpr size_t getSize() const noexcept { return m_queue.size(); }
 };
 
 } // namespace cxxmp::core
