@@ -4,5 +4,5 @@ target_include_directories(${PROJECT_NAME}-Test
 
 target_link_libraries(${PROJECT_NAME}-Test PUBLIC
   spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-  "${CXXMP_LIB_NAME}"
+  cxxmp::cxxmp
 )

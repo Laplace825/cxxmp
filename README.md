@@ -6,7 +6,7 @@ Just an Implenmentation for A GMP inspired(ps. not that great though)**
 
 ### Versions
 
-Because the `concept` used, minimum C++ version should be over `C++ 20`.
+Because the `concept` used, minimum C++ version should be over `C++20`.
 
 ### Dependencies
 
@@ -68,3 +68,5 @@ fmt::println(
   - Each "local task queue" has their own capacity (now just 32 * Number of logic CPU Cores)
 3. Using a "global task queue" to store the "overflowed" tasks (when all "local task queue" are not able to store)
 4. "local task queue" will tell "global task queue" to give a task to run whenever "local task queue" has space.
+
+![Schematic Diagram](/assets/schematicDiagram.svg)
