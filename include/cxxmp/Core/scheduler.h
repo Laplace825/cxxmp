@@ -97,7 +97,7 @@ class Scheduler : public TaskQueueObserver {
         return m_localQueuesMapIds[idx].second;
     }
 
-    constexpr Tid getTid(size_t idx) const noexcept {
+    Tid getTid(size_t idx) const noexcept {
         return m_localQueuesMapIds[idx].first;
     }
 
