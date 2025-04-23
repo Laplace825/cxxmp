@@ -5,7 +5,7 @@
 
 #include <chrono>
 
-namespace cxxmp::core {
+namespace cxxmp::common {
 
 class RAIITimer {
   public:
@@ -63,4 +63,4 @@ class RAIITimer {
     Unit m_unit;
 };
 
-} // namespace cxxmp::core
+} // namespace cxxmp::common

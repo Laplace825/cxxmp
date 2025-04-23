@@ -211,6 +211,19 @@ class LocalTaskQueue : public TaskQueue {
         return true;
     }
 
+    bool isBusyWorking() const noexcept {
+        switch (m_state) {
+            case State::Busy:
+            case State::ToCompleteAll:
+            case State::SubTaskErrorHappend:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    State getState() const noexcept { return m_state; }
+
     constexpr size_t getSize() const noexcept { return m_queue.size(); }
 
     constexpr bool full() const noexcept { return getSize() == getCapacity(); }

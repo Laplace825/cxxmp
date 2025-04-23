@@ -2,8 +2,8 @@
 
 #include "cxxmp/Common/typing.h"
 #include "cxxmp/config.h"
+#include "cxxmp/Core/taskQueue.h"
 
-#include <cinttypes>
 #include <thread>
 
 namespace cxxmp {
@@ -101,9 +101,10 @@ void Scheduler::waitForAllCompletion() noexcept {
     }
     while (!allDone) {
         allDone = true;
-
         for (size_t i = 0; i < sys::CXXMP_PROC_COUNT; ++i) {
-            if (m_localQueuesMap[i]->hasTask()) {
+            if (m_localQueuesMap[i]->hasTask() ||
+                m_localQueuesMap[i]->isBusyWorking())
+            {
                 allDone = false;
                 break;
             }
@@ -117,19 +118,13 @@ size_t Scheduler::fullLocalQueueCount() const noexcept {
 }
 
 void Scheduler::notifyQueueHasSpace(size_t hid) {
-    static thread_local bool alreadyNotified = false;
-    if (alreadyNotified) {
-        return;
-    }
-    alreadyNotified = true;
-    auto indexOp    = indexFromHid(hid);
+    auto indexOp = indexFromHid(hid);
     if (indexOp.has_value()) {
         size_t index = indexOp.value();
-        m_fullLocalQueue.reset(index);
+        m_fullLocalQueue.set(index, false);
         log::trace("Global Task moved to local queue {}", index);
         moveGlobalToLocal(index);
     }
-    alreadyNotified = false;
 }
 
 } // namespace cxxmp

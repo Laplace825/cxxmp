@@ -101,7 +101,7 @@ void LocalTaskQueue::shutdown() {
 }
 
 void LocalTaskQueue::waitForCompletion() {
-    if (m_state == State::Shutdown) {
+    if (m_state == State::Shutdown || m_state == State::ToCompleteAll) {
         return;
     }
     log::debug("LocalTaskQueue[{}] WaitForCompletion", this->getHid());
@@ -115,8 +115,13 @@ void LocalTaskQueue::waitForCompletion() {
 }
 
 void LocalTaskQueue::startCompletion() {
-    log::debug("LocalTaskQueue[{}] startCompletion", this->getHid());
-    this->stateTransfer2(State::ToCompleteAll);
+    if (m_state == State::Shutdown || m_state == State::ToCompleteAll) {
+        return;
+    }
+    if (hasTask()) {
+        log::debug("LocalTaskQueue[{}] startCompletion", this->getHid());
+        this->stateTransfer2(State::ToCompleteAll);
+    }
 }
 
 // just run one front task each time

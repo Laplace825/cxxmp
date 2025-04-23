@@ -62,7 +62,7 @@ static void testParallel() {
     int duration = 0;
 
     {
-        core::RAIITimer t{};
+        common::RAIITimer t{};
         // Wait for all tasks to complete
         scheduler->waitForAllCompletion();
         duration = t.elapsed();
@@ -111,7 +111,7 @@ With {} cores
     }
 
     {
-        core::RAIITimer t{core::RAIITimer::Unit::Microseconds};
+        common::RAIITimer t{common::RAIITimer::Unit::Microseconds};
         scheduler->waitForAllCompletion();
     }
 
