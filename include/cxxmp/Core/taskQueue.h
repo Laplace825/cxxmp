@@ -7,12 +7,14 @@
 #include "cxxmp/Utily/getsys.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <memory>
 #include <mutex>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 /**
  * cxxmp: C++ Multi-Processing (GMP inspired)
@@ -68,6 +70,12 @@ class TaskQueue {
     }
 
     bool empty() const noexcept { return m_queue.empty(); }
+
+    constexpr size_t getSize() const noexcept { return m_queue.size(); }
+
+    constexpr size_t getCapacity() const noexcept { return m_capacity; }
+
+    constexpr bool full() const noexcept { return getSize() == getCapacity(); }
 };
 
 /**
@@ -109,14 +117,19 @@ class LocalTaskQueue : public TaskQueue {
     // will handle the error
     void handleError();
 
-    void stateTransfer2(State state);
+    void stateTransfer2(State state) noexcept;
 
-    void waitForTask();
+    void signalStealing() noexcept;
+
+    void waitForTask() noexcept;
+
+    bool tryStealTask() noexcept;
+
+    // when one self get a task and now has 2 more
+    // notify peers they can steal task
+    void notifyPeersGetTask() noexcept;
 
   public:
-    // always be the 32 * cpus (system logical CPU cores)
-    constexpr size_t getCapacity() const noexcept { return m_capacity; }
-
     LocalTaskQueue(const LocalTaskQueue&)            = delete;
     LocalTaskQueue& operator=(const LocalTaskQueue&) = delete;
 
@@ -160,16 +173,18 @@ class LocalTaskQueue : public TaskQueue {
     explicit LocalTaskQueue(size_t capacity) : TaskQueue(capacity) {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
-        m_state         = State::Idle;
-        m_exception_ptr = nullptr;
-        m_capacity      = capacity;
+        m_state            = State::Idle;
+        m_exception_ptr    = nullptr;
+        m_capacity         = capacity;
+        m_lastStealAttempt = std::chrono::steady_clock::now();
     }
 
     LocalTaskQueue() : TaskQueue(sys::CXXMP_PROC_COUNT * 32) {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
-        m_state         = State::Idle;
-        m_exception_ptr = nullptr;
+        m_state            = State::Idle;
+        m_exception_ptr    = nullptr;
+        m_lastStealAttempt = std::chrono::steady_clock::now();
     }
 
     ~LocalTaskQueue() {
@@ -206,6 +221,7 @@ class LocalTaskQueue : public TaskQueue {
             }
             m_cv.notify_one();
         }
+        notifyPeersGetTask();
         // After pushing to queue
         log::debug("Queue now has {} tasks", m_queue.size());
         return true;
@@ -223,10 +239,6 @@ class LocalTaskQueue : public TaskQueue {
     }
 
     State getState() const noexcept { return m_state; }
-
-    constexpr size_t getSize() const noexcept { return m_queue.size(); }
-
-    constexpr bool full() const noexcept { return getSize() == getCapacity(); }
 
     // get the `thread` id
     ::std::thread::id getTid() const noexcept { return m_tid; }
@@ -300,6 +312,14 @@ class LocalTaskQueue : public TaskQueue {
 
     void clear();
 
+    // returns the task that is stolen from other
+    size_t stealFrom(
+      LocalTaskQueue* victim = nullptr, size_t maxStealItem = 1) noexcept;
+
+    void setPear(typing::Rc< ::std::vector< LocalTaskQueue* > > peer) noexcept;
+
+    void enableStealing(bool enabled = true) noexcept;
+
   private:
     size_t m_hid;            // a hashed thread id
     ::std::thread::id m_tid; // the thread id
@@ -307,6 +327,11 @@ class LocalTaskQueue : public TaskQueue {
     mutable ::std::atomic< State > m_state = State::Idle;
     ::std::exception_ptr m_exception_ptr;
     ::std::jthread m_worker;
+    typing::Rc< ::std::vector< LocalTaskQueue* > > m_peers{nullptr};
+    bool m_stealEnabled{true};
+
+    ::std::chrono::steady_clock::time_point m_lastStealAttempt;
+    ::std::atomic< bool > m_shouldCheckStealing{false};
 };
 
 // Global task queue
@@ -342,8 +367,6 @@ class GlobalTaskQueue : public TaskQueue {
         std::lock_guard< std::mutex > lock(m_mx);
         return pop(true);
     }
-
-    constexpr size_t getSize() const noexcept { return m_queue.size(); }
 };
 
 } // namespace cxxmp::core

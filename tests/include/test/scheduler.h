@@ -119,4 +119,40 @@ With {} cores
       "Result: {} Valid: {}\n", summing.load(), totalTask == summing.load());
 }
 
+static void testSteal() {
+    using namespace std::chrono_literals;
+    fmt::println("====== Parallel Steal Test ======");
+
+    auto scheduler = Scheduler::build();
+    scheduler->pause();
+    const size_t localCapacity0 = scheduler->getLocalCapcity(0);
+    const size_t numCPUs        = scheduler->numCPUs();
+    const size_t totalTime      = localCapacity0 * 100;
+
+    // submit tasks to just one task queue
+    // if sequential, the time will near `totalTime`
+    // if task steal by other, the time must be less than `totalTime`
+
+    for (size_t i = 0; i < localCapacity0; ++i) {
+        scheduler->submit(core::Task::build([i] {
+            std::this_thread::sleep_for(100ms);
+            log::info("Runned");
+        }),
+          0);
+    }
+
+    int duration = 0;
+
+    scheduler->unpause();
+    {
+        common::RAIITimer t{};
+        scheduler->waitForAllCompletion();
+        duration = t.elapsed();
+    }
+
+    fmt::println("The result should be less than {}ms", totalTime);
+    fmt::println("Result Valid: {}", totalTime > duration);
+    fmt::println("Speed up: {:.2f}\n", totalTime * 1.0 / duration);
+}
+
 } // namespace test::scheduler

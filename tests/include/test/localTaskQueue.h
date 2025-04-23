@@ -14,6 +14,7 @@ using namespace cxxmp;
 using namespace cxxmp::core;
 
 static void mutipleTask(bool mtxOrNot = false) {
+    fmt::println("\n===== Mutiple Tasks Test =====");
     int ret = 0;
     // Shared counter without synchronization
     int shared_counter = 0;
@@ -128,7 +129,7 @@ static void mutipleTask(bool mtxOrNot = false) {
 static bool rightPause() {
     bool success = false;
     using namespace std::chrono_literals;
-    log::info("Starting pause functionality test");
+    fmt::println("\n===== Pause Functionality Test =====");
 
     // Create a local task queue
     LocalTaskQueue ltq(20);
@@ -539,6 +540,7 @@ static bool runPerformanceTest(
 
 // Main test function
 static void runAllPerformanceTests() {
+    fmt::println("\n===== Performance Test =====");
     bool all_valid = true;
 
     // Test CPU-bound workloads
@@ -581,6 +583,7 @@ SOME TESTS FAILED!
 
 static void moveConstruct() {
     using namespace std::chrono_literals;
+    fmt::println("\n===== Move Constructor Test =====");
     // testing the move constructor works
     auto ltq = LocalTaskQueue();
     ltq.run();
@@ -601,8 +604,6 @@ static void moveConstruct() {
     moved_ltq.unpause();
 
     std::this_thread::sleep_for(250ms);
-    // moved_ltq.waitForCompletion();
-    // moved_ltq.shutdown();
 }
 
 } // namespace test::ltq

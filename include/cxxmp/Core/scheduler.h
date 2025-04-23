@@ -57,11 +57,17 @@ class Scheduler : public TaskQueueObserver {
     template < typename TaskType >
         requires ::std::is_same_v< TaskType, core::Task > ||
                  ::std::is_same_v< TaskType, core::RcTaskPtr >
-    bool push2Local(TaskType&& task) noexcept {
+    bool push2Local(
+      TaskType&& task, typing::Option< size_t > indx = typing::None) noexcept {
         if (m_fullLocalQueue.all()) {
             return false;
         }
-        size_t id = nextTaskQueueId();
+        size_t id = indx.has_value() ? indx.value() : nextTaskQueueId();
+        if (indx.has_value() && m_fullLocalQueue.test(id)) {
+            log::warn(
+              "Scheduler LocalTaskQueue[{}] is full, try to allocate to others",
+              id);
+        }
         // find the next available local queue
         while (m_fullLocalQueue.test(id)) {
             id = nextTaskQueueId();
@@ -79,7 +85,7 @@ class Scheduler : public TaskQueueObserver {
     // Constructor
     [[nodiscard("Should not be called directly. If you want to create a "
                 "scheduler, use the build() method.")]]
-    Scheduler();
+    Scheduler(bool enableTaskStealing = true);
 
     Scheduler(const Scheduler&)            = delete;
     Scheduler& operator=(const Scheduler&) = delete;
@@ -88,7 +94,14 @@ class Scheduler : public TaskQueueObserver {
 
     ~Scheduler();
 
-    static typing::Box< Scheduler > build() noexcept;
+    /**
+     * @brief: A static factory function to build a object
+     *
+     * Pass true if you want the local task queue to steal tasks
+     * from each other, default we enable it
+     */
+    static typing::Box< Scheduler > build(
+      bool enableTaskStealing = true) noexcept;
 
     constexpr size_t numCPUs() const noexcept { return sys::CXXMP_PROC_COUNT; }
 
@@ -105,7 +118,7 @@ class Scheduler : public TaskQueueObserver {
     template < typename TaskType >
         requires ::std::is_same_v< TaskType, core::Task > ||
                  ::std::is_same_v< TaskType, core::RcTaskPtr >
-    bool submit(TaskType&& task) {
+    bool submit(TaskType&& task, typing::Option< size_t > indx = typing::None) {
         if (m_fullLocalQueue.all()) {
             if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
                             core::Task >)
@@ -117,7 +130,7 @@ class Scheduler : public TaskQueueObserver {
             }
             return true;
         }
-        return push2Local(std::forward< TaskType >(task));
+        return push2Local(std::forward< TaskType >(task), indx);
     }
 
     constexpr size_t getLocalSize(size_t idx) const {
