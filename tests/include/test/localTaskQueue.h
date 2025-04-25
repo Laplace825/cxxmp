@@ -1,18 +1,24 @@
 #pragma once
 
-#include "cxxmp/Core/task.h"
-#include "cxxmp/Core/taskQueue.h"
-
 #include <algorithm>
 #include <random>
 #include <thread>
 #include <vector>
+
+#include "cxxmp/Core/task.h"
+#include "cxxmp/Core/taskQueue.h"
+#include "cxxmp/Utily/getsys.h"
 
 namespace test::ltq {
 
 using namespace cxxmp;
 using namespace cxxmp::core;
 
+/**
+ * @brief: Check if our `local task queue` is running in parallel
+ *
+ * We mean to make a race condition and hope that happen
+ */
 static void mutipleTask(bool mtxOrNot = false) {
     fmt::println("\n===== Mutiple Tasks Test =====");
     int ret = 0;
@@ -126,6 +132,10 @@ static void mutipleTask(bool mtxOrNot = false) {
     }
 }
 
+/**
+ * @brief: Check if the `pause` function and `unpause` working as
+ * expected
+ */
 static bool rightPause() {
     bool success = false;
     using namespace std::chrono_literals;
@@ -538,7 +548,9 @@ static bool runPerformanceTest(
     return all_valid;
 }
 
-// Main test function
+/**
+ * @brief: Run all the performance test
+ */
 static void runAllPerformanceTests() {
     fmt::println("\n===== Performance Test =====");
     bool all_valid = true;
@@ -581,6 +593,10 @@ SOME TESTS FAILED!
     }
 }
 
+/**
+ * @brief: Check if the `move constructor` works as expected though I do not
+ * recommand using this
+ */
 static void moveConstruct() {
     using namespace std::chrono_literals;
     fmt::println("\n===== Move Constructor Test =====");

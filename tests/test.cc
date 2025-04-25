@@ -10,7 +10,6 @@ int main(int argc, char* argv[]) {
     // test::ltq::rightPause();
     // test::ltq::runAllPerformanceTests();
     // test::ltq::moveConstruct();
-    test::scheduler::build();
     test::scheduler::testParallel();
     test::scheduler::testSumming();
     test::scheduler::testSteal();

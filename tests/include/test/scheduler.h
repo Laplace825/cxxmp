@@ -1,24 +1,20 @@
 #pragma once
 
+#include <thread>
+
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/timer.h"
 #include "cxxmp/Core/scheduler.h"
 #include "cxxmp/Core/task.h"
 
-#include <thread>
-
 namespace test::scheduler {
 
 using namespace cxxmp;
 
-static void build() {
-    log::cfg(log::level::trace);
-    auto scheduler = Scheduler::build();
-
-    // auto scheduler2 = Scheduler();
-    // log::info("Scheduler2 built with {} CPUs", scheduler2.numCPUs());
-}
-
+/**
+ * @brief: Check if our Scheduler could allocate tasks to different queues
+ * to run in parallel
+ */
 static void testParallel() {
     using namespace std::chrono_literals;
     fmt::println("======== Testing Parallel =========");
@@ -85,6 +81,10 @@ Actually Finished? {}
       (50.0 * totalTasks) / duration, sum == 0);
 }
 
+/**
+ * @brief: A simple test to check if our scheduler has task loss
+ * If the result is as expected, no task loss
+ */
 static void testSumming() {
     using namespace std::chrono_literals;
     fmt::println("====== Parallel Summing Test ======");
@@ -119,6 +119,12 @@ With {} cores
       "Result: {} Valid: {}\n", summing.load(), totalTask == summing.load());
 }
 
+/**
+ * @brief: A test to check if our the local task queue could steal tasks
+ * from other queues
+ *
+ * We deliberately submit all the tasks to the 0 local task queue
+ */
 static void testSteal() {
     using namespace std::chrono_literals;
     fmt::println("====== Parallel Steal Test ======");
@@ -152,7 +158,7 @@ static void testSteal() {
 
     fmt::println("The result should be less than {}ms", totalTime);
     fmt::println("Result Valid: {}", totalTime > duration);
-    fmt::println("Speed up: {:.2f}\n", totalTime * 1.0 / duration);
+    fmt::println("Speed up: {:.2f}x\n", totalTime * 1.0 / duration);
 }
 
 } // namespace test::scheduler

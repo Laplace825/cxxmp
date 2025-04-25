@@ -1,15 +1,15 @@
 #include "cxxmp/Core/taskQueue.h"
 
-#include "cxxmp/Common/log.h"
-#include "cxxmp/Core/queueObserver.h"
-#include "cxxmp/Core/task.h"
-
 #include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include "cxxmp/Common/log.h"
+#include "cxxmp/Core/queueObserver.h"
+#include "cxxmp/Core/task.h"
 
 namespace cxxmp::core {
 
@@ -192,10 +192,10 @@ void LocalTaskQueue::shutdown() {
     m_shouldCheckStealing = false;
     m_stealEnabled        = false;
     // seems shared_ptr is not required to clear by myself
-    // I do not know will this cause memory leak
+    // this won't cause memory leak because the shared_ptr has no recursive
+    // reference count
+    //
     // if (m_peers) {
-    //     std::fill(m_peers->begin(), m_peers->end(), nullptr);
-    //     m_peers = nullptr;
     // }
     this->stateTransfer2(State::Shutdown);
 

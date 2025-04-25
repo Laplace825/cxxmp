@@ -5,25 +5,18 @@
  *
  * The Task class is a placeholder for the task system.
  * Each task is a unit of work that can be executed in parallel.
- * The task system is responsible for managing the execution of tasks,
+ * The task system is an abstarct of execution of tasks
  *
- * The task system is designed to be lightweight and efficient,
  */
-
-#include "cxxmp/Common/typing.h"
 
 #include <functional>
 #include <memory>
 #include <string_view>
 
+#include "cxxmp/Common/typing.h"
+
 namespace cxxmp::core {
 
-/**
- * @brief: The Task class is a placeholder for the task system.
- * Each task is a unit of work that can be executed in parallel.
- *
- * `Task` it self could be runned in async like `pause` `stop` `execute`
- */
 class Task {
   public:
     enum class State {
@@ -112,4 +105,4 @@ using TaskPtr     = typing::Box< Task >;
 using RcTaskPtr   = typing::Rc< Task >;
 using WeakTaskPtr = typing::Weak< Task >;
 
-} // namespace cxxmp
+} // namespace cxxmp::core

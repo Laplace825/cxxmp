@@ -9,21 +9,21 @@
  *
  * The scheduler always makes the local tasks queue capacity equals to
  * `32 * sys::CXXMP_PROC_COUNT`
+ *
  */
+
+#include <bitset>
+#include <thread>
+#include <unordered_map>
 
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/typing.h"
 #include "cxxmp/Core/queueObserver.h"
 #include "cxxmp/Core/taskQueue.h"
 
-#include <bitset>
-#include <thread>
-#include <unordered_map>
-
 namespace cxxmp {
 
 class Scheduler : public TaskQueueObserver {
-
   public:
     using Tid = ::std::thread::id;
     using Hid = size_t;
@@ -63,10 +63,18 @@ class Scheduler : public TaskQueueObserver {
             return false;
         }
         size_t id = indx.has_value() ? indx.value() : nextTaskQueueId();
-        if (indx.has_value() && m_fullLocalQueue.test(id)) {
-            log::warn(
-              "Scheduler LocalTaskQueue[{}] is full, try to allocate to others",
-              id);
+        if (indx.has_value()) {
+            if (id > numCPUs()) {
+                log::error("Scheduler Submitting a bad id: {}, RollBack to use "
+                           "round-robin",
+                  id);
+                id = nextTaskQueueId();
+            }
+            else if (m_fullLocalQueue.test(id)) {
+                log::warn("Scheduler LocalTaskQueue[{}] is full, try to "
+                          "allocate to others",
+                  id);
+            }
         }
         // find the next available local queue
         while (m_fullLocalQueue.test(id)) {

@@ -1,4 +1,4 @@
-## CXXMP -- A Mutil-Thread Processers Manage For you
+## CXXMP -- A Multi-Threading Processers Management For you
 
 Just `submit` any of your task, and your task will be runned in Parallel. 
 **This may not be that stable for you to use in official development. 
@@ -14,6 +14,8 @@ Because the `concept` used, minimum C++ version should be over `C++20`.
 Actually these are removable because there are not effecting the main framework.
 
 ### Example
+
+You can also check `tests/include/test` for my testing programs.
 
 ```cpp
 
@@ -43,7 +45,7 @@ With {} cores
 
 // Submit tasks, I recommend to using lambda because of capture feature
 for (int i = 0; i < totalTask; ++i) {
-    scheduler->submit(core::Task::build([&summing]() { summing += 1; }));
+    scheduler->submit(cxxmp::core::Task::build([&summing]() { summing += 1; }));
 }
 
 {

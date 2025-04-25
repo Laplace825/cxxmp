@@ -1,10 +1,17 @@
 #pragma once
 
-#include "cxxmp/Common/log.h"
-#include "cxxmp/config.h"
-#include "cxxmp/Core/queueObserver.h"
-#include "cxxmp/Core/task.h"
-#include "cxxmp/Utily/getsys.h"
+/**
+ * cxxmp: C++ Multi-Processing (GMP inspired)
+ *
+ * The local task queue is a thread-local queue that is used to manage the
+ * local tasks for a thread.
+ *
+ * We create threads equals to the number of the logical cores
+ * Each thread has its own task queue
+ * but the task queue could be shared with other threads, for any other could
+ * steal tasks from others local queue
+ *
+ */
 
 #include <atomic>
 #include <chrono>
@@ -16,17 +23,10 @@
 #include <thread>
 #include <vector>
 
-/**
- * cxxmp: C++ Multi-Processing (GMP inspired)
- *
- * The local task queue is a thread-local queue that is used to manage the
- * local tasks for a thread.
- *
- * We create threads equals to the number of the logical cores
- * Each thread has its own task queue
- * but the task queue could be shared with other threads, for any other could
- * steal tasks from others local queue
- */
+#include "cxxmp/Common/log.h"
+#include "cxxmp/config.h"
+#include "cxxmp/Core/queueObserver.h"
+#include "cxxmp/Core/task.h"
 
 namespace cxxmp::core {
 
@@ -190,6 +190,10 @@ class LocalTaskQueue : public TaskQueue {
     ~LocalTaskQueue() {
         log::debug("LocalTaskQueue destroyed");
         this->shutdown();
+        if (m_peers) {
+            log::trace("LocalTaskQueue[{}] peers shared_ptr use count: {}",
+              getHid(), m_peers.use_count());
+        }
     }
 
     // submit a task to run, always push to the back
