@@ -70,5 +70,6 @@ fmt::println(
   - Each "local task queue" has their own capacity (now just 32 * Number of logic CPU Cores)
 3. Using a "global task queue" to store the "overflowed" tasks (when all "local task queue" are not able to store)
 4. "local task queue" will tell "global task queue" to give a task to run whenever "local task queue" has space.
+5. "local task queue" will steal task from others when itself is idle waiting.
 
 ![Schematic Diagram](/assets/schematicDiagram.svg)
