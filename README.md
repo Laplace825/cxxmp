@@ -17,48 +17,86 @@ Actually these are removable because there are not effecting the main framework.
 
 You can also check `tests/include/test` for my testing programs.
 
+#### Testing Parallel
+
 ```cpp
+    fmt::println("====== Parallel Summing Test ======");
+    
+    // the threads automatically runned in background after build
+    // but in a waiting state (not busy waiting).
+    auto scheduler = cxxmp::Scheduler::build();
+    
+    // pause executing 
+    scheduler->pause();
+    
+    const int numCores = scheduler->numCPUs();
+    
+    std::atomic< int > summing{0};
+    
+    // get local task queue capacity through index, though all the local task queue's are the same
+    size_t capacity  = scheduler->getLocalCapcity(0);
+    size_t totalTask = numCores * capacity * 2;
+    
+    fmt::println(R"(
+    With {} tasks
+    With {} cores
+    )",
+      totalTask, numCores);
+    
+    // Submit tasks, I recommend to using lambda because of capture feature
+    for (int i = 0; i < totalTask; ++i) {
+        scheduler->submit(cxxmp::core::Task::build([&summing]() { summing += 1; }));
+    }
+    
+    {
+        // a RAII Timer (destroyed and print the duration with libfmt)
+        cxxmp::common::RAIITimer t{cxxmp::common::RAIITimer::Unit::Microseconds};
+    
+        // block there and wait for all tasks to complete
+        // like `join`
+        scheduler->waitForAllCompletion();
+    }
+    
+    fmt::println(
+      "Result: {} Valid: {}\n", summing.load(), totalTask == summing.load());
+```
 
-using namespace std::chrono_literals;
-fmt::println("====== Parallel Summing Test ======");
+#### Testing Task Stealing
 
-// the threads automatically runned in background after build
-// but in a waiting state (not busy waiting).
-auto scheduler = cxxmp::Scheduler::build();
+```cpp
+    using namespace std::chrono_literals;
+    fmt::println("====== Parallel Steal Test ======");
 
-// pause executing 
-scheduler->pause();
+    auto scheduler = cxxmp::Scheduler::build();
+    scheduler->pause();
+    const size_t localCapacity0 = scheduler->getLocalCapcity(0);
+    const size_t numCPUs        = scheduler->numCPUs();
+    const size_t totalTime      = localCapacity0 * 100;
 
-const int numCores = scheduler->numCPUs();
+    // submit tasks to just one task queue
+    // if sequential, the time will near `totalTime`
+    // if task steal by other, the time must be less than `totalTime`
 
-std::atomic< int > summing{0};
+    for (size_t i = 0; i < localCapacity0; ++i) {
+        scheduler->submit(core::Task::build([i] {
+            std::this_thread::sleep_for(100ms);
+            cxxmp::log::info("Runned");
+        }),
+          0);
+    }
 
-// get local task queue capacity through index, though all the local task queue's are the same
-size_t capacity  = scheduler->getLocalCapcity(0);
-size_t totalTask = numCores * capacity * 2;
+    int duration = 0;
 
-fmt::println(R"(
-With {} tasks
-With {} cores
-)",
-  totalTask, numCores);
+    scheduler->unpause();
+    {
+        cxxmp::common::RAIITimer t{};
+        scheduler->waitForAllCompletion();
+        duration = t.elapsed();
+    }
 
-// Submit tasks, I recommend to using lambda because of capture feature
-for (int i = 0; i < totalTask; ++i) {
-    scheduler->submit(cxxmp::core::Task::build([&summing]() { summing += 1; }));
-}
-
-{
-    // a RAII Timer (destroyed and print the duration with libfmt)
-    cxxmp::core::RAIITimer t{cxxmp::core::RAIITimer::Unit::Microseconds};
-
-    // block there and wait for all tasks to complete
-    // like `join`
-    scheduler->waitForAllCompletion();
-}
-
-fmt::println(
-  "Result: {} Valid: {}\n", summing.load(), totalTask == summing.load());
+    fmt::println("The result should be less than {}ms", totalTime);
+    fmt::println("Result Valid: {}", totalTime > duration);
+    fmt::println("Speed up: {:.2f}x\n", totalTime * 1.0 / duration);
 ```
 
 ### Details About this Work
