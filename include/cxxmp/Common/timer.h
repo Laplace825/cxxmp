@@ -38,7 +38,13 @@ class RAIITimer {
         : m_enablePrint(enablePrint), m_unit(unit),
           m_start_time(std::chrono::steady_clock::now()) {}
 
-    size_t elapsed() const noexcept {
+    [[nodiscard("RAIITimer should not be ignore because the rvalue will "
+                "immediately destroy")]]
+    RAIITimer(bool enablePrint)
+        : m_enablePrint(enablePrint), m_unit(Unit::Milliseconds),
+          m_start_time(std::chrono::steady_clock::now()) {}
+
+    auto elapsed() const {
         auto end_time = std::chrono::steady_clock::now();
         switch (m_unit) {
             case Unit::Seconds:

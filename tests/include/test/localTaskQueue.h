@@ -622,4 +622,18 @@ static void moveConstruct() {
     std::this_thread::sleep_for(250ms);
 }
 
+/**
+ * @brief: Test if the error could be handled, when task throw
+ */
+
+static void throwExcept() {
+    auto ltq = LocalTaskQueue();
+    ltq.run();
+    for (size_t i = 0; i < 10; ++i) {
+        ltq.submit(
+          Task::build([i] { throw std::runtime_error("Task failed"); }));
+    }
+    ltq.waitForCompletion();
+}
+
 } // namespace test::ltq

@@ -15,6 +15,7 @@
 #include <bitset>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include "cxxmp/Common/log.h"
 #include "cxxmp/Common/typing.h"
@@ -42,9 +43,7 @@ class Scheduler : public TaskQueueObserver {
                sys::CXXMP_PROC_COUNT;
     }
 
-    template < typename TaskType >
-        requires ::std::is_same_v< std::decay_t< TaskType >, core::Task > ||
-                 ::std::is_same_v< std::decay_t< TaskType >, core::RcTaskPtr >
+    template < core::isValidTask TaskType >
     bool submitToLocal(TaskType&& task, size_t idx) {
         if (m_localQueuesMap[idx]->submit(std::forward< TaskType >(task))) {
             m_fullLocalQueue.set(idx, m_localQueuesMap[idx]->full());
@@ -54,9 +53,7 @@ class Scheduler : public TaskQueueObserver {
     }
 
     // push a task to the local queue
-    template < typename TaskType >
-        requires ::std::is_same_v< TaskType, core::Task > ||
-                 ::std::is_same_v< TaskType, core::RcTaskPtr >
+    template < core::isValidTask TaskType >
     bool push2Local(
       TaskType&& task, typing::Option< size_t > indx = typing::None) noexcept {
         if (m_fullLocalQueue.all()) {
@@ -108,7 +105,7 @@ class Scheduler : public TaskQueueObserver {
      * Pass true if you want the local task queue to steal tasks
      * from each other, default we enable it
      */
-    static typing::Box< Scheduler > build(
+    static typing::Rc< Scheduler > build(
       bool enableTaskStealing = true) noexcept;
 
     constexpr size_t numCPUs() const noexcept { return sys::CXXMP_PROC_COUNT; }
@@ -123,10 +120,8 @@ class Scheduler : public TaskQueueObserver {
     }
 
     // submit a task to run, always push to the back
-    template < typename TaskType >
-        requires ::std::is_same_v< TaskType, core::Task > ||
-                 ::std::is_same_v< TaskType, core::RcTaskPtr >
-    bool submit(TaskType&& task, typing::Option< size_t > indx = typing::None) {
+    template < core::isValidTask TaskType >
+    bool submit(TaskType&& task) {
         if (m_fullLocalQueue.all()) {
             if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
                             core::Task >)
@@ -134,7 +129,31 @@ class Scheduler : public TaskQueueObserver {
                 m_globalQueue->store(std::forward< core::Task >(task));
             }
             else {
-                m_globalQueue->store(std::move(task));
+                m_globalQueue->store(std::move_if_noexcept(task));
+            }
+            return true;
+        }
+        return push2Local(std::forward< TaskType >(task));
+    }
+
+    // submit a task to run, always push to the back
+    template < core::isValidTask TaskType >
+    bool submit(size_t indx, TaskType&& task) {
+        if (indx >= numCPUs()) {
+            log::warn(
+              "Scheduler Invalid Submitting index, should be less then {}, "
+              "rollback to round robin",
+              numCPUs());
+            return submit(std::forward< TaskType >(task));
+        }
+        if (m_fullLocalQueue.all()) {
+            if constexpr (::std::is_same_v< ::std::decay_t< TaskType >,
+                            core::Task >)
+            {
+                m_globalQueue->store(std::forward< core::Task >(task));
+            }
+            else {
+                m_globalQueue->store(std::move_if_noexcept(task));
             }
             return true;
         }
@@ -170,20 +189,12 @@ class Scheduler : public TaskQueueObserver {
     void notifyQueueHasSpace(size_t hid) override;
 
   private:
-    static size_t objCnt;
     ::std::array< typing::Box< core::LocalTaskQueue >,
       sys::CXXMP_PROC_COUNT >
       m_localQueuesMap; // capacity equals to m_numCPUs
 
-    // this stores all the local queue's hashed id and thread id
-    // index -> (tid, hid)
-    ::std::array< ::std::pair< Tid, Hid >, sys::CXXMP_PROC_COUNT >
-      m_localQueuesMapIds;
-
-    // this tells the hid's index in the m_localQueuesMap
-    // hid -> index
-    ::std::unordered_map< Hid, size_t > m_localQueueMapIndex;
     typing::Box< core::GlobalTaskQueue > m_globalQueue;
+
     ::std::bitset< sys::CXXMP_PROC_COUNT > m_fullLocalQueue;
 
     /**
@@ -192,6 +203,19 @@ class Scheduler : public TaskQueueObserver {
      * because just the front tasks are executed parallelly
      */
     size_t m_clockAllocatorTaskQueueId = 0;
+
+    // this tells the hid's index in the m_localQueuesMap
+    // hid -> index
+    ::std::unordered_map< Hid, size_t > m_localQueueMapIndex;
+
+    // this stores all the local queue's hashed id and thread id
+    // index -> (tid, hid)
+    ::std::array< ::std::pair< Tid, Hid >, sys::CXXMP_PROC_COUNT >
+      m_localQueuesMapIds;
 };
+
+namespace glob {
+static auto scheduler = []() { return cxxmp::Scheduler::build(); }();
+} // namespace glob
 
 } // namespace cxxmp

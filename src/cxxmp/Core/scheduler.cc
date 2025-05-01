@@ -1,28 +1,29 @@
 #include "cxxmp/Core/scheduler.h"
 
+#include <memory>
+#include <thread>
+#include <utility>
+#include <vector>
+
 #include "cxxmp/Common/typing.h"
 #include "cxxmp/config.h"
 #include "cxxmp/Core/taskQueue.h"
 
-#include <memory>
-#include <thread>
-#include <vector>
-
 namespace cxxmp {
 
-size_t Scheduler::objCnt = 0;
-
-typing::Box< Scheduler > Scheduler::build(bool enableTaskStealing) noexcept {
-    return typing::Box< Scheduler >(new Scheduler(enableTaskStealing));
+typing::Rc< Scheduler > Scheduler::build(bool enableTaskStealing) noexcept {
+    return std::make_shared< Scheduler >(enableTaskStealing);
 }
 
-Scheduler::Scheduler(Scheduler&& other) noexcept = default;
+Scheduler::Scheduler(Scheduler&& other) noexcept
+    : m_fullLocalQueue(std::move_if_noexcept(other.m_fullLocalQueue)),
+      m_localQueuesMap(std::move_if_noexcept(other.m_localQueuesMap)),
+      m_localQueuesMapIds(std::move_if_noexcept(other.m_localQueuesMapIds)),
+      m_localQueueMapIndex(std::move_if_noexcept(other.m_localQueueMapIndex)),
+      m_globalQueue(std::move_if_noexcept(other.m_globalQueue)),
+      m_clockAllocatorTaskQueueId(other.m_clockAllocatorTaskQueueId) {}
 
 Scheduler::Scheduler(bool enableTaskStealing) : m_fullLocalQueue(0) {
-    ++objCnt;
-    if (objCnt > 1) {
-        throw std::runtime_error("Scheduler already exists");
-    }
     for (size_t i = 0ul; i < sys::CXXMP_PROC_COUNT; ++i) {
         m_localQueuesMap[i] =
           std::make_unique< core::LocalTaskQueue >(32 * sys::CXXMP_PROC_COUNT);
@@ -50,7 +51,6 @@ Scheduler::Scheduler(bool enableTaskStealing) : m_fullLocalQueue(0) {
 }
 
 Scheduler::~Scheduler() {
-    --objCnt;
     waitForAllCompletion();
     log::debug("Scheduler destroyed");
     for (const auto& queue : m_localQueuesMap) {

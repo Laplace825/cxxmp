@@ -105,4 +105,8 @@ using TaskPtr     = typing::Box< Task >;
 using RcTaskPtr   = typing::Rc< Task >;
 using WeakTaskPtr = typing::Weak< Task >;
 
+template < typename TaskType >
+concept isValidTask = ::std::is_same_v< ::std::decay_t< TaskType >, Task > ||
+                      ::std::is_same_v< ::std::decay_t< TaskType >, RcTaskPtr >;
+
 } // namespace cxxmp::core

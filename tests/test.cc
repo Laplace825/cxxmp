@@ -10,9 +10,12 @@ int main(int argc, char* argv[]) {
     // test::ltq::rightPause();
     // test::ltq::runAllPerformanceTests();
     // test::ltq::moveConstruct();
-    test::scheduler::testParallel();
-    test::scheduler::testSumming();
-    test::scheduler::testSteal();
+    // test::ltq::throwExcept();
+    // test::scheduler::testParallel();
+    // test::scheduler::testSumming();
+    // test::scheduler::testSteal();
+    // test::scheduler::mixed();
+    test::scheduler::globalScheduler();
     log::info("SUCCESSFULLY RUN");
     return 0;
 }

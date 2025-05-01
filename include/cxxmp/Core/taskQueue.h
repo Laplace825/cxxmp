@@ -41,8 +41,8 @@ class TaskQueue {
         if (this->m_queue.empty()) {
             return nullptr;
         }
-        auto task =
-          std::move(front ? this->m_queue.front() : this->m_queue.back());
+        auto task = std::move_if_noexcept(
+          front ? this->m_queue.front() : this->m_queue.back());
         if (front) {
             this->m_queue.pop_front();
         }
@@ -58,7 +58,8 @@ class TaskQueue {
     TaskQueue()                            = default;
 
     TaskQueue(TaskQueue&& other)
-        : m_queue(std::move(other.m_queue)), m_capacity(other.m_capacity) {
+        : m_queue(std::move_if_noexcept(other.m_queue)),
+          m_capacity(other.m_capacity) {
         other.m_queue.clear();
     }
 
@@ -90,7 +91,6 @@ class LocalTaskQueue : public TaskQueue {
         Idle, // the start state
         Busy,
         Paused,
-        SubTaskErrorHappend,
         ToCompleteAll, // when in this state, will do all tasks then idle
         Shutdown,
     };
@@ -104,7 +104,6 @@ class LocalTaskQueue : public TaskQueue {
             Fn(Idle);
             Fn(Busy);
             Fn(Paused);
-            Fn(SubTaskErrorHappend);
             Fn(ToCompleteAll);
             Fn(Shutdown);
             default:
@@ -113,10 +112,12 @@ class LocalTaskQueue : public TaskQueue {
 #undef Fn
     }
 
-  private:
-    // will handle the error
-    void handleError();
+    using Descriptor = struct {
+        size_t spwan;
+        size_t done;
+    };
 
+  private:
     void stateTransfer2(State state) noexcept;
 
     void signalStealing() noexcept;
@@ -129,13 +130,18 @@ class LocalTaskQueue : public TaskQueue {
     // notify peers they can steal task
     void notifyPeersGetTask() noexcept;
 
+    void spwanCtl(size_t) noexcept;
+    void doneCtl(size_t) noexcept;
+
+    bool isFinishAll() noexcept;
+
   public:
     LocalTaskQueue(const LocalTaskQueue&)            = delete;
     LocalTaskQueue& operator=(const LocalTaskQueue&) = delete;
 
     LocalTaskQueue(LocalTaskQueue&& other) noexcept
         : m_hid(other.m_hid), m_tid(other.m_tid), m_state(other.m_state.load()),
-          m_exception_ptr(other.m_exception_ptr), TaskQueue(std::move(other)) {
+          TaskQueue(std::move(other)) {
         other.m_state = State::Idle;
         if (other.m_worker.joinable()) {
             other.shutdown();
@@ -152,9 +158,8 @@ class LocalTaskQueue : public TaskQueue {
             m_capacity = other.m_capacity;
             m_hid      = other.m_hid;
             m_tid      = other.m_tid;
-            m_queue    = std::move(other.m_queue);
+            m_queue    = std::move_if_noexcept(other.m_queue);
             m_state.store(other.m_state.load());
-            m_exception_ptr = std::move(other.m_exception_ptr);
 
             // Reset other's state
             other.m_state = State::Shutdown;
@@ -174,7 +179,6 @@ class LocalTaskQueue : public TaskQueue {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
         m_state            = State::Idle;
-        m_exception_ptr    = nullptr;
         m_capacity         = capacity;
         m_lastStealAttempt = std::chrono::steady_clock::now();
     }
@@ -183,23 +187,21 @@ class LocalTaskQueue : public TaskQueue {
         log::debug("LocalTaskQueue created");
         // Initialize the queue
         m_state            = State::Idle;
-        m_exception_ptr    = nullptr;
         m_lastStealAttempt = std::chrono::steady_clock::now();
     }
 
     ~LocalTaskQueue() {
-        log::debug("LocalTaskQueue destroyed");
+        log::debug("LocalTaskQueue[{}] Will destroy", getHid());
         this->shutdown();
         if (m_peers) {
             log::trace("LocalTaskQueue[{}] peers shared_ptr use count: {}",
               getHid(), m_peers.use_count());
         }
+        log::debug("LocalTaskQueue[{}] destroyed", getHid());
     }
 
     // submit a task to run, always push to the back
-    template < typename TaskType >
-        requires ::std::is_same_v< std::decay_t< TaskType >, Task > ||
-                 ::std::is_same_v< std::decay_t< TaskType >, RcTaskPtr >
+    template < core::isValidTask TaskType >
     bool submit(TaskType&& task) {
         if (m_state == State::Shutdown) {
             return false;
@@ -220,8 +222,10 @@ class LocalTaskQueue : public TaskQueue {
                 // In submit method
                 log::debug("Submitting task: ptr={:p}, valid={}",
                   (void*)task.get(), task != nullptr);
-                m_queue.push_back(std::move(task));
-                log::debug("LocalTaskQueue Tasks: {}", m_queue.size());
+                m_queue.push_back(std::move_if_noexcept(task));
+                spwanCtl(1);
+                log::debug("LocalTaskQueue Tasks: {} Spwan: {}", m_queue.size(),
+                  m_descriptor.spwan);
             }
             m_cv.notify_one();
         }
@@ -235,7 +239,6 @@ class LocalTaskQueue : public TaskQueue {
         switch (m_state) {
             case State::Busy:
             case State::ToCompleteAll:
-            case State::SubTaskErrorHappend:
                 return true;
             default:
                 return false;
@@ -273,6 +276,12 @@ class LocalTaskQueue : public TaskQueue {
      */
     void shutdown();
 
+    // check if the queue is shutdown, true if `shutdown`
+    bool isShutdown() const noexcept { return m_state == State::Shutdown; }
+
+    // check if the queue is paused, true if `paused`
+    bool isPaused() const noexcept { return m_state == State::Paused; }
+
     /**
      * @brief: wait for completion of all tasks in the queue
      *
@@ -296,6 +305,10 @@ class LocalTaskQueue : public TaskQueue {
      * After this method returns, state change to `State::Idle`.
      */
     void startCompletion();
+
+    bool isToCompleteAll() const noexcept {
+        return m_state == State::ToCompleteAll;
+    }
 
     // pop back one task
     //
@@ -329,13 +342,14 @@ class LocalTaskQueue : public TaskQueue {
     ::std::thread::id m_tid; // the thread id
     ::std::condition_variable m_cv;
     mutable ::std::atomic< State > m_state = State::Idle;
-    ::std::exception_ptr m_exception_ptr;
     ::std::jthread m_worker;
     typing::Rc< ::std::vector< LocalTaskQueue* > > m_peers{nullptr};
     bool m_stealEnabled{true};
 
     ::std::chrono::steady_clock::time_point m_lastStealAttempt;
     ::std::atomic< bool > m_shouldCheckStealing{false};
+
+    Descriptor m_descriptor{0, 0};
 };
 
 // Global task queue
@@ -345,12 +359,10 @@ class GlobalTaskQueue : public TaskQueue {
     ~GlobalTaskQueue() = default;
 
     GlobalTaskQueue(GlobalTaskQueue&& other) noexcept
-        : TaskQueue(::std::move(other)) {}
+        : TaskQueue(::std::move_if_noexcept(other)) {}
 
     // store a task to the back
-    template < typename TaskType >
-        requires ::std::is_same_v< ::std::decay_t< TaskType >, Task > ||
-                 ::std::is_same_v< ::std::decay_t< TaskType >, RcTaskPtr >
+    template < core::isValidTask TaskType >
     void store(TaskType&& task) {
         ::std::lock_guard< std::mutex > lock(m_mx);
         if constexpr (::std::is_same_v< ::std::decay_t< TaskType >, Task >) {
@@ -363,7 +375,7 @@ class GlobalTaskQueue : public TaskQueue {
         {
             log::trace("GlobalTaskQueue Storing Ptr task: ptr={:p}, valid={}",
               (void*)task.get(), task != nullptr);
-            m_queue.push_back(std::move(task));
+            m_queue.push_back(std::move_if_noexcept(task));
         }
     }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <numeric>
 #include <thread>
 
 #include "cxxmp/Common/log.h"
@@ -9,14 +10,13 @@
 
 namespace test::scheduler {
 
-using namespace cxxmp;
-
 /**
  * @brief: Check if our Scheduler could allocate tasks to different queues
  * to run in parallel
  */
 static void testParallel() {
     using namespace std::chrono_literals;
+    using namespace cxxmp;
     fmt::println("======== Testing Parallel =========");
 
     auto scheduler = Scheduler::build();
@@ -87,6 +87,7 @@ Actually Finished? {}
  */
 static void testSumming() {
     using namespace std::chrono_literals;
+    using namespace cxxmp;
     fmt::println("====== Parallel Summing Test ======");
 
     auto scheduler = Scheduler::build();
@@ -127,6 +128,7 @@ With {} cores
  */
 static void testSteal() {
     using namespace std::chrono_literals;
+    using namespace cxxmp;
     fmt::println("====== Parallel Steal Test ======");
 
     auto scheduler = Scheduler::build();
@@ -135,16 +137,18 @@ static void testSteal() {
     const size_t numCPUs        = scheduler->numCPUs();
     const size_t totalTime      = localCapacity0 * 100;
 
+    std::atomic< int > cnt{0};
+
     // submit tasks to just one task queue
     // if sequential, the time will near `totalTime`
     // if task steal by other, the time must be less than `totalTime`
 
     for (size_t i = 0; i < localCapacity0; ++i) {
-        scheduler->submit(core::Task::build([i] {
+        scheduler->submit(0, core::Task::build([i, &cnt] {
             std::this_thread::sleep_for(100ms);
             log::info("Runned");
-        }),
-          0);
+            cnt.fetch_add(1);
+        }));
     }
 
     int duration = 0;
@@ -159,6 +163,120 @@ static void testSteal() {
     fmt::println("The result should be less than {}ms", totalTime);
     fmt::println("Result Valid: {}", totalTime > duration);
     fmt::println("Speed up: {:.2f}x\n", totalTime * 1.0 / duration);
+    fmt::println("Total tasks: {} Completed tasks: {} Valid: {}",
+      localCapacity0, cnt.load(), cnt.load() % localCapacity0 == 0);
+}
+
+/**
+ * @brief: A mixed complex testing. Contains a vector normalization and work
+ * steal.
+ */
+static void mixed(cxxmp::typing::Rc< cxxmp::Scheduler > s = nullptr) {
+    using namespace std::chrono_literals;
+    using namespace cxxmp;
+    fmt::println("====== Mixed complex testing ====== ");
+    auto scheduler = (s != nullptr) ? s : Scheduler::build();
+    scheduler->pause();
+    const size_t localCapacity0 = scheduler->getLocalCapcity(0);
+    const size_t numCPUs        = scheduler->numCPUs();
+    const size_t totalTasks     = localCapacity0 * 2;
+
+    const size_t vecSize = totalTasks * 10 + 3;
+
+    // generate random numbers
+    std::vector< double > v(vecSize, 0);
+    std::generate(v.begin(), v.end(), [] { return rand() % 10; });
+
+    using WorkArg = struct {
+        size_t begin;
+        size_t end;
+    };
+
+    size_t sizePerTask = vecSize / totalTasks;
+
+    std::vector< WorkArg > workArgs(totalTasks);
+    for (size_t i = 0; i < totalTasks; ++i) {
+        workArgs[i].begin = i * sizePerTask;
+        workArgs[i].end =
+          (i != totalTasks - 1) ? (i + 1) * sizePerTask : vecSize;
+    }
+
+    double trueSum = std::accumulate(v.begin(), v.end(), 0,
+      [](double sum, double value) { return sum + value * value; });
+
+    std::vector< double > summing(totalTasks, 0);
+    std::atomic< int > cnt{0};
+
+    // submit tasks to just one task queue
+    // if sequential, the time will near `totalTime`
+    // if task steal by other, the time must be less than `totalTime`
+
+    for (size_t i = 0; i < totalTasks; ++i) {
+        scheduler->submit(
+          0, core::Task::build([i, &cnt, &workArgs, &v, &summing] {
+              std::this_thread::sleep_for(100ms);
+              log::info("Runned");
+              cnt.fetch_add(1);
+              for (size_t j = workArgs[i].begin; j < workArgs[i].end; ++j) {
+                  double data = v[j];
+                  summing[i] += data * data;
+              }
+
+              if (i % 8 == 0) {
+                  throw std::runtime_error(
+                    fmt::format("Simulate Task[{}] failed", i));
+              }
+          }));
+    }
+
+    int duration{0};
+    std::atomic< double > sum{0};
+
+    {
+        common::RAIITimer t{false};
+        scheduler->waitForAllCompletion();
+        for (size_t i = 0; i < totalTasks; ++i) {
+            scheduler->submit(core::Task::build([i, &cnt, &summing, &sum] {
+                cnt.fetch_add(1);
+                sum += summing[i];
+            }));
+        }
+        scheduler->waitForAllCompletion();
+        const double sqrtSum = std::sqrt(sum.load());
+        for (size_t i = 0; i < totalTasks; ++i) {
+            scheduler->submit(
+              numCPUs + 2, core::Task::build([i, &cnt, &workArgs, &v, sqrtSum] {
+                  cnt.fetch_add(1);
+                  log::info("Task[{}] started sqrt sum: {}", i, sqrtSum);
+                  for (size_t j = workArgs[i].begin; j < workArgs[i].end; ++j) {
+                      v[j] /= sqrtSum;
+                  }
+              }));
+        }
+        scheduler->waitForAllCompletion();
+        duration = t.elapsed();
+    }
+
+    const size_t totalTime = totalTasks * 100;
+    fmt::println("The result should be less than {}ms", totalTime);
+    fmt::println("Run Time Valid: {}", totalTime > duration);
+    fmt::println("Speed up: {:.2f}x", totalTime * 1.0 / duration);
+    fmt::println("Total tasks: {} Completed tasks: {} Valid: {}",
+      3 * totalTasks, cnt.load(), cnt == 3 * totalTasks);
+    // get the square sum up of v
+    double shouldBeOne = std::accumulate(v.cbegin(), v.cend(), 0.0,
+      [](double sum, double x) { return sum + x * x; });
+    fmt::println("Norm Vector Square Sum {} (should be ~1), Valid: {}",
+      shouldBeOne, std::abs(shouldBeOne - 1.0) < 1e-6);
+}
+
+/**
+ * @brief: Test the global `cxxmp::glob::scheduler`
+ */
+static void globalScheduler() {
+    fmt::println("========== Global Scheduler testing ==========");
+    cxxmp::glob::scheduler->pause();
+    mixed(cxxmp::glob::scheduler);
 }
 
 } // namespace test::scheduler

@@ -5,6 +5,7 @@
 #include <exception>
 #include <mutex>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "cxxmp/Common/log.h"
@@ -14,12 +15,23 @@
 namespace cxxmp::core {
 
 #define LOCK_GUARD std::lock_guard< std::mutex > lock(this->m_mx)
+#define LOG_ERROR \
+    log::error("LocalTaskQueue[{}] Got Error: {}", this->getHid(), e.what())
+
+void LocalTaskQueue::spwanCtl(size_t s) noexcept { m_descriptor.spwan += s; }
+
+void LocalTaskQueue::doneCtl(size_t d) noexcept { m_descriptor.done += d; }
+
+bool LocalTaskQueue::isFinishAll() noexcept {
+    bool ret = (m_descriptor.spwan == m_descriptor.done) && !hasTask();
+    log::trace("LocalTaskQueue[{}] isFinishAll {}", this->getHid(), ret);
+    return ret;
+}
 
 void LocalTaskQueue::stateTransfer2(State state) noexcept {
     log::trace("LocalTaskQueue[{}] from {} to {}", this->getHid(),
       state2String(this->m_state), state2String(state));
-    // std::atomic
-    this->m_state.store(state);
+    this->m_state = state;
 
     // Notify one waiting thread, this may notify the thread
     // that is waiting for a task
@@ -27,36 +39,26 @@ void LocalTaskQueue::stateTransfer2(State state) noexcept {
     m_cv.notify_all();
 }
 
-void LocalTaskQueue::handleError() {
-    log::debug("LocalTaskQueue[{}] handleError()", this->getHid());
-    // will handle the error and change the state to idle
-    if (this->m_exception_ptr) {
-        try {
-            throw this->m_exception_ptr;
-        } catch (const std::exception& e) {
-            log::error(
-              "LocalTaskQueue[{}] Get Error: {}", this->getHid(), e.what());
-        }
-        this->m_exception_ptr = nullptr;
-    }
-}
-
 RcTaskPtr LocalTaskQueue::popBack() {
-    LOCK_GUARD;
+    // @NOTE: the lock here seems not necessary
+    // steal just happens when somebody has 1 more task (> 1)
+    // `this` just run the front task, and others just steal from back
+    // so there is no race condition, but I don't know whether a complex
+    // situation will cause race condition or not.
+
+    // LOCK_GUARD;
     return this->pop(false);
 }
 
 RcTaskPtr LocalTaskQueue::popFront() {
-    LOCK_GUARD;
+    // LOCK_GUARD;
     return this->pop(true);
 }
 
 bool LocalTaskQueue::hasTask() const noexcept { return !this->m_queue.empty(); }
 
 void LocalTaskQueue::pause() noexcept {
-    if (this->m_state == State::Shutdown || this->m_state == State::Paused ||
-        this->m_state == State::ToCompleteAll)
-    {
+    if (this->isShutdown() || this->isPaused() || this->isToCompleteAll()) {
         return;
     }
     log::debug("LocalTaskQueue[{}] Pause", this->getHid());
@@ -64,12 +66,10 @@ void LocalTaskQueue::pause() noexcept {
 }
 
 void LocalTaskQueue::unpause() noexcept {
-    if (this->m_state == State::Shutdown ||
-        this->m_state == State::ToCompleteAll)
-    {
+    if (this->isShutdown() || this->isToCompleteAll()) {
         return;
     }
-    else if (this->m_state == State::Paused) {
+    else if (this->isPaused()) {
         log::debug("LocalTaskQueue[{}] unpause", this->getHid());
         this->stateTransfer2(State::Idle);
     }
@@ -100,11 +100,8 @@ void LocalTaskQueue::enableStealing(bool enabled) noexcept {
 size_t LocalTaskQueue::stealFrom(
   LocalTaskQueue* victim, size_t maxItems) noexcept {
     if (!victim || !victim->hasTask() || victim == this || full() ||
-        m_state == State::Shutdown)
+        isShutdown())
     {
-        return 0;
-    }
-    if (victim->getState() == State::Shutdown) {
         return 0;
     }
     victim->pause();
@@ -119,6 +116,7 @@ size_t LocalTaskQueue::stealFrom(
 
     for (size_t i = 0; i < toSteal; ++i) {
         auto task = std::move(victim->popBack());
+        victim->spwanCtl(-1);
         submit(task);
         ++stolenCnt;
     }
@@ -166,8 +164,7 @@ void LocalTaskQueue::waitForTask() noexcept {
     std::unique_lock< std::mutex > lock(this->m_mx);
     if (m_stealEnabled) {
         if (!this->m_cv.wait_for(lock, 50ms, [this]() {
-                return hasTask() || this->m_state == State::Paused ||
-                       this->m_state == State::Shutdown ||
+                return hasTask() || this->isPaused() || this->isShutdown() ||
                        m_shouldCheckStealing;
             }))
         {
@@ -177,52 +174,50 @@ void LocalTaskQueue::waitForTask() noexcept {
     }
     else {
         this->m_cv.wait(lock, [this]() {
-            return hasTask() || this->m_state == State::Paused ||
-                   this->m_state == State::Shutdown;
+            return hasTask() || this->isPaused() || this->isShutdown();
         });
     }
     m_shouldCheckStealing = false;
 }
 
 void LocalTaskQueue::shutdown() {
-    if (this->m_state == State::Shutdown) {
+    if (isShutdown()) {
         return;
     }
-    log::debug("LocalTaskQueue[{}] Shutdown", this->getHid());
-    m_shouldCheckStealing = false;
-    m_stealEnabled        = false;
+    m_stealEnabled = false;
+
+    this->waitForCompletion();
+
+    // Ensure the worker thread has time to notice the shutdown
+    std::this_thread::yield();
     // seems shared_ptr is not required to clear by myself
     // this won't cause memory leak because the shared_ptr has no recursive
     // reference count
     //
     // if (m_peers) {
     // }
+
     this->stateTransfer2(State::Shutdown);
 
-    // Ensure the worker thread has time to notice the shutdown
-    std::this_thread::yield();
-
-    if (this->hasTask()) {
-        this->clear();
-    }
+    log::debug("LocalTaskQueue[{}] Shutdown", this->getHid());
 }
 
 void LocalTaskQueue::waitForCompletion() {
-    if (m_state == State::Shutdown || m_state == State::ToCompleteAll) {
+    if (isShutdown() || isToCompleteAll()) {
         return;
     }
     log::debug("LocalTaskQueue[{}] WaitForCompletion", this->getHid());
     // to state busy working and doing all the jobs, when the queue is
     // empty the completion condition is met
     this->stateTransfer2(State::ToCompleteAll);
-    while (this->hasTask()) {
+    while (!this->isFinishAll()) {
         std::this_thread::yield();
     }
     log::debug("LocalTaskQueue[{}] WaitForCompletion Done", this->getHid());
 }
 
 void LocalTaskQueue::startCompletion() {
-    if (m_state == State::Shutdown || m_state == State::ToCompleteAll) {
+    if (isShutdown() || isToCompleteAll()) {
         return;
     }
     if (hasTask()) {
@@ -241,14 +236,16 @@ bool LocalTaskQueue::step(TaskQueueObserver* observer) {
         if (task) {
             try {
                 task->execute();
-                runned = true;
-                if (observer && m_state != State::Shutdown) {
-                    observer->notifyQueueHasSpace(getHid());
-                    log::trace("LocalTaskQueue[{}] notify Has Space", getHid());
-                }
-            } catch (...) {
-                this->m_exception_ptr = std::current_exception();
-                this->stateTransfer2(State::SubTaskErrorHappend);
+            } catch (const std::exception& e) {
+                LOG_ERROR;
+            }
+            runned = true;
+            doneCtl(1);
+            log::debug("LocalTaskQueue[{}] Task Executed: {}", this->getHid(),
+              this->m_descriptor.done);
+            if (observer && !isShutdown()) {
+                observer->notifyQueueHasSpace(getHid());
+                log::trace("LocalTaskQueue[{}] notify Has Space", getHid());
             }
         }
     }
@@ -272,7 +269,7 @@ void LocalTaskQueue::run(TaskQueueObserver* observer) {
     using namespace std::chrono_literals;
     m_worker = std::jthread([this, observer]() {
         // the state machine
-        while (m_state != State::Shutdown) {
+        while (!isShutdown()) {
             switch (m_state) {
                 case State::Shutdown: {
                     // `Shutdown` state could be transferred just
@@ -294,6 +291,8 @@ void LocalTaskQueue::run(TaskQueueObserver* observer) {
                       (m_shouldCheckStealing ||
                         std::chrono::steady_clock::now() - m_lastStealAttempt >
                           50ms);
+                    log::trace("LocakTaskQueue[{}] Should Try Steal: {}",
+                      getHid(), shouldTrySteal);
                     if (shouldTrySteal) {
                         m_lastStealAttempt = std::chrono::steady_clock::now();
                         m_shouldCheckStealing = false;
@@ -309,7 +308,7 @@ void LocalTaskQueue::run(TaskQueueObserver* observer) {
 
                     // when get a task, check if we should transfer
                     // to pause ourself, else we transfer to busy
-                    if (m_state == State::Paused) {
+                    if (isPaused()) {
                         stateTransfer2(State::Paused);
                     }
                     else if (hasTask()) {
@@ -320,35 +319,25 @@ void LocalTaskQueue::run(TaskQueueObserver* observer) {
                 case State::ToCompleteAll: {
                     // Any State could be transfered to ToCompleteAll
                     // when user requested to complete all tasks
-                    try {
-                        if (!step(observer)) {
-                            log::debug("LocalTaskQueue[{}] CompleteAll "
-                                       "finished, Transfer to Idle",
-                              this->getHid());
-                            // no task to done
-                            stateTransfer2(State::Idle);
-                        }
-                    } catch (const std::exception& e) {
-                        log::error("LocalTaskQueue[{}] CompleteAll "
-                                   "Got Error: {}",
-                          this->getHid(), e.what());
+                    if (!step(observer)) {
+                        log::debug("LocalTaskQueue[{}] CompleteAll "
+                                   "finished, Transfer to Idle",
+                          this->getHid());
+                        // no task to done
+                        stateTransfer2(State::Idle);
                     }
                     break;
                 }
                 case State::Busy: {
                     // `Idle` -> `Busy` when get one work to do
-                    try {
-                        step(observer);
-                        // a task is done without exception
-                        if (m_state == State::Busy) {
-                            // when we still working but user already change
-                            // the state (may pause or shutdown or complete
-                            // all)
-                            stateTransfer2(State::Idle);
-                        }
-                    } catch (...) {
-                        std::rethrow_exception(std::current_exception());
-                        stateTransfer2(State::SubTaskErrorHappend);
+                    step(observer);
+
+                    // a task is done without exception
+                    if (m_state == State::Busy) {
+                        // when we still working but user already change
+                        // the state (may pause or shutdown or complete
+                        // all)
+                        stateTransfer2(State::Idle);
                     }
                     break;
                 }
@@ -363,16 +352,9 @@ void LocalTaskQueue::run(TaskQueueObserver* observer) {
                         m_cv.wait(lock, [this] {
                             log::trace(
                               "Waiting for state change from Paused to Any");
-                            return m_state != State::Paused;
+                            return !isPaused();
                         });
                     }
-                    break;
-                }
-                case State::SubTaskErrorHappend: {
-                    // `Busy` -> `SubTaskErrorHappend` when task error
-                    // happend
-                    handleError();
-                    stateTransfer2(State::Idle);
                     break;
                 }
             } // end switch
