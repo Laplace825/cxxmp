@@ -14,8 +14,7 @@ int main(int argc, char* argv[]) {
     // test::scheduler::testParallel();
     // test::scheduler::testSumming();
     // test::scheduler::testSteal();
-    // test::scheduler::mixed();
-    test::scheduler::globalScheduler();
+    test::scheduler::mixed< 32 >();
     log::info("SUCCESSFULLY RUN");
     return 0;
 }

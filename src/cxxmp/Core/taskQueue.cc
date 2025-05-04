@@ -40,18 +40,12 @@ void LocalTaskQueue::stateTransfer2(State state) noexcept {
 }
 
 RcTaskPtr LocalTaskQueue::popBack() {
-    // @NOTE: the lock here seems not necessary
-    // steal just happens when somebody has 1 more task (> 1)
-    // `this` just run the front task, and others just steal from back
-    // so there is no race condition, but I don't know whether a complex
-    // situation will cause race condition or not.
-
-    // LOCK_GUARD;
+    LOCK_GUARD;
     return this->pop(false);
 }
 
 RcTaskPtr LocalTaskQueue::popFront() {
-    // LOCK_GUARD;
+    LOCK_GUARD;
     return this->pop(true);
 }
 
@@ -76,7 +70,7 @@ void LocalTaskQueue::unpause() noexcept {
 }
 
 void LocalTaskQueue::clear() {
-    LOCK_GUARD;
+    // LOCK_GUARD;
     this->m_queue.clear();
 }
 
@@ -126,8 +120,8 @@ size_t LocalTaskQueue::stealFrom(
         m_cv.notify_one();
     }
 
-    this->unpause();
     victim->unpause();
+    this->unpause();
     return stolenCnt;
 }
 
@@ -163,7 +157,7 @@ void LocalTaskQueue::waitForTask() noexcept {
     using namespace std::chrono_literals;
     std::unique_lock< std::mutex > lock(this->m_mx);
     if (m_stealEnabled) {
-        if (!this->m_cv.wait_for(lock, 50ms, [this]() {
+        if (!this->m_cv.wait_for(lock, m_stealInterval, [this]() {
                 return hasTask() || this->isPaused() || this->isShutdown() ||
                        m_shouldCheckStealing;
             }))
@@ -290,7 +284,7 @@ void LocalTaskQueue::run(TaskQueueObserver* observer) {
                       m_stealEnabled &&
                       (m_shouldCheckStealing ||
                         std::chrono::steady_clock::now() - m_lastStealAttempt >
-                          50ms);
+                          m_stealInterval);
                     log::trace("LocakTaskQueue[{}] Should Try Steal: {}",
                       getHid(), shouldTrySteal);
                     if (shouldTrySteal) {

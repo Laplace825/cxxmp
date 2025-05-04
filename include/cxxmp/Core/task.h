@@ -11,7 +11,6 @@
 
 #include <functional>
 #include <memory>
-#include <string_view>
 
 #include "cxxmp/Common/typing.h"
 
@@ -19,27 +18,6 @@ namespace cxxmp::core {
 
 class Task {
   public:
-    enum class State {
-        Created,
-        Executing,
-        Completed,
-    };
-
-    static constexpr std::string_view state2String(State state) {
-#define Fn(stateName)      \
-    case State::stateName: \
-        return "Task::State::" #stateName;
-
-        switch (state) {
-            Fn(Created);
-            Fn(Executing);
-            Fn(Completed);
-            default:
-                return "Unknown";
-        }
-#undef Fn
-    }
-
     using Fn = std::function< void() >;
 
     Task() : m_fn{nullptr} {}
@@ -58,8 +36,6 @@ class Task {
 
     // when the task could be executed, execute the task
     void execute();
-
-    State getState() const noexcept { return m_state; }
 
     template < typing::Callable CallableFn >
     static typing::Rc< Task > build(CallableFn&& fn) {
@@ -98,7 +74,6 @@ class Task {
      * ```
      */
     typing::Box< Fn > m_fn;
-    State m_state{State::Created};
 };
 
 using TaskPtr     = typing::Box< Task >;

@@ -200,6 +200,11 @@ class LocalTaskQueue : public TaskQueue {
         log::debug("LocalTaskQueue[{}] destroyed", getHid());
     }
 
+    void setStealInterval(
+      ::std::chrono::milliseconds interval) noexcept {
+        m_stealInterval = interval;
+    }
+
     // submit a task to run, always push to the back
     template < core::isValidTask TaskType >
     bool submit(TaskType&& task) {
@@ -347,6 +352,8 @@ class LocalTaskQueue : public TaskQueue {
     bool m_stealEnabled{true};
 
     ::std::chrono::steady_clock::time_point m_lastStealAttempt;
+    // steal interval
+    ::std::chrono::milliseconds m_stealInterval{std::chrono::milliseconds(50)};
     ::std::atomic< bool > m_shouldCheckStealing{false};
 
     Descriptor m_descriptor{0, 0};

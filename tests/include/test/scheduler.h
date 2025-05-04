@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <numeric>
 #include <thread>
 
@@ -19,7 +20,7 @@ static void testParallel() {
     using namespace cxxmp;
     fmt::println("======== Testing Parallel =========");
 
-    auto scheduler = Scheduler::build();
+    auto scheduler = Scheduler<>::build();
     scheduler->pause();
 
     const int tasksPerCore = 10; // Reasonable number for testing
@@ -90,7 +91,7 @@ static void testSumming() {
     using namespace cxxmp;
     fmt::println("====== Parallel Summing Test ======");
 
-    auto scheduler = Scheduler::build();
+    auto scheduler = Scheduler<>::build();
     scheduler->pause();
 
     const int numCores = scheduler->numCPUs();
@@ -131,11 +132,13 @@ static void testSteal() {
     using namespace cxxmp;
     fmt::println("====== Parallel Steal Test ======");
 
-    auto scheduler = Scheduler::build();
+    auto scheduler = Scheduler< 32 >::build();
     scheduler->pause();
     const size_t localCapacity0 = scheduler->getLocalCapcity(0);
-    const size_t numCPUs        = scheduler->numCPUs();
-    const size_t totalTime      = localCapacity0 * 100;
+    scheduler->setStealIntervalFor(4, 5000ms);
+    scheduler->setStealIntervalFor(1, 5000ms);
+    scheduler->setStealIntervalFor(2, 5000ms);
+    const size_t totalTime = localCapacity0 * 100;
 
     std::atomic< int > cnt{0};
 
@@ -171,14 +174,16 @@ static void testSteal() {
  * @brief: A mixed complex testing. Contains a vector normalization and work
  * steal.
  */
-static void mixed(cxxmp::typing::Rc< cxxmp::Scheduler > s = nullptr) {
+template < size_t NumLocalQueues = cxxmp::sys::CXXMP_PROC_COUNT >
+static void mixed(
+  cxxmp::typing::Rc< cxxmp::Scheduler< NumLocalQueues > > s = nullptr) {
     using namespace std::chrono_literals;
     using namespace cxxmp;
     fmt::println("====== Mixed complex testing ====== ");
-    auto scheduler = (s != nullptr) ? s : Scheduler::build();
+    auto scheduler = (s != nullptr) ? s : Scheduler< NumLocalQueues >::build();
     scheduler->pause();
     const size_t localCapacity0 = scheduler->getLocalCapcity(0);
-    const size_t numCPUs        = scheduler->numCPUs();
+    const size_t numCPUs        = scheduler->numLocalQueues();
     const size_t totalTasks     = localCapacity0 * 2;
 
     const size_t vecSize = totalTasks * 10 + 3;
@@ -268,15 +273,6 @@ static void mixed(cxxmp::typing::Rc< cxxmp::Scheduler > s = nullptr) {
       [](double sum, double x) { return sum + x * x; });
     fmt::println("Norm Vector Square Sum {} (should be ~1), Valid: {}",
       shouldBeOne, std::abs(shouldBeOne - 1.0) < 1e-6);
-}
-
-/**
- * @brief: Test the global `cxxmp::glob::scheduler`
- */
-static void globalScheduler() {
-    fmt::println("========== Global Scheduler testing ==========");
-    cxxmp::glob::scheduler->pause();
-    mixed(cxxmp::glob::scheduler);
 }
 
 } // namespace test::scheduler
