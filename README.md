@@ -24,7 +24,8 @@ You can also check `tests/include/test` for my testing programs.
     
     // the threads automatically runned in background after build
     // but in a waiting state (not busy waiting).
-    auto scheduler = cxxmp::Scheduler::build();
+    // default make number of cpu core local task queue
+    auto scheduler = cxxmp::Scheduler<>::build(); 
     
     // pause executing 
     scheduler->pause();
@@ -67,10 +68,10 @@ You can also check `tests/include/test` for my testing programs.
     using namespace std::chrono_literals;
     fmt::println("====== Parallel Steal Test ======");
 
-    auto scheduler = cxxmp::Scheduler::build();
+    // specify that make 32 local task queues
+    auto scheduler = cxxmp::Scheduler<32>::build();
     scheduler->pause();
     const size_t localCapacity0 = scheduler->getLocalCapcity(0);
-    const size_t numCPUs        = scheduler->numCPUs();
     const size_t totalTime      = localCapacity0 * 100;
 
     // submit tasks to just one task queue

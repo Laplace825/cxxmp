@@ -14,15 +14,15 @@ namespace versions {
 
 constexpr std::string_view BUILD_TYPE      = "Release";
 constexpr std::string_view PROGRAM_NAME    = "cxxmp";
-constexpr std::string_view PROGRAM_VERSION = "0.0.1";
-constexpr std::string_view GIT_HEAD        = "4043dca9f6f91c0ba9c763e1d215557b20609cac";
+constexpr std::string_view PROGRAM_VERSION = "0.2.1";
+constexpr std::string_view GIT_HEAD        = "513fbf7dae89083dff9a9b93ac66ada345b75794";
 constexpr std::string_view GIT_BRANCH      = "main";
 inline constexpr std::string_view VERSION_INFO_STRING =
-  R"(Project: cxxmp v0.0.1
+  R"(Project: cxxmp v0.2.1
 Build: Release
 System: Darwin-24.4.0
 Compiler: Clang 20.1.4
-Git: 4043dca9f6f91c0ba9c763e1d215557b20609cac (main)
+Git: 513fbf7dae89083dff9a9b93ac66ada345b75794 (main)
 )";
 } // namespace versions
 
